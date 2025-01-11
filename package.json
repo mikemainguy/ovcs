@@ -1,0 +1,30 @@
+{
+  "name": "ovcs",
+  "version": "0.2.5",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "scm",
+    "version",
+    "control"
+  ],
+  "bin": {
+    "ovcs": "index.js"
+  },
+  "type": "module",
+  "author": "mike.mainguy@gmail.com",
+  "license": "MIT",
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "express": "^4.21.1",
+    "pouchdb": "^9.0.0",
+    "leveldown": "^6.1.1"
+  },
+  "description": "quick and dirty realtime version control for a directory, helps avoid conflicts on distributed teams",
+  "devDependencies": {
+    "partykit": "0.0.111"
+  }
+}
