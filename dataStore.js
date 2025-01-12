@@ -4,6 +4,7 @@ import {debug} from "./debug.js";
 import express from "express";
 import {OVCSSETTINGS} from "./const.js";
 import fs from "node:fs";
+import * as path from "node:path";
 
 
 let db = null;
@@ -54,6 +55,8 @@ function web() {
         res.header('content-type', 'application/json').send(JSON.stringify(count));
     });
     app.get("/", async (req, res) => {
+
+        console.log(import.meta.dirname);
         const file = fs.readFileSync('web/index.html')
        res.send(file.toString('utf-8'));
     });
