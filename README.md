@@ -9,6 +9,7 @@ and enabled detecting divergent code bases and/or
 hidden conflicts due to latency.
 
 DEBUG_OVCS=1 to enable debug output to console
+
 ## Usage
 ```bash
 npx ovcs

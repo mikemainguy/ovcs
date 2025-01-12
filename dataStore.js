@@ -2,9 +2,10 @@ import PouchDB from "pouchdb";
 import crypto from "node:crypto";
 import {debug} from "./debug.js";
 import express from "express";
+import {OVCSSETTINGS} from "./const.js";
 
-const db = new PouchDB("leveldb://.ovc/localdb");
-web(db);
+const db = new PouchDB(`leveldb://${OVCSSETTINGS.ROOT_DIR}/localdb`);
+
 
 function sha256(data) {
     return crypto.createHash('sha256').update(data).digest('hex');
@@ -26,18 +27,19 @@ async function saveData(data) {
             try {
                 await db.put({...data, _id: sha256(data.id), file: data.id});
             } catch (err) {
-                debug.error('error saving data', err);
+                debug('error saving data', err);
             }
-
         }
         if (err.status === 409) {
-            debug.log('conflict', data.id);
+            debug('conflict', data.id);
         }
     }
 
 }
-
-async function web(db) {
+function initWeb() {
+    web(db);
+}
+function web(db) {
     const app = express();
     app.get("/info", async (req, res) => {
         const count = await db.info();
@@ -57,4 +59,4 @@ async function web(db) {
 
 }
 
-export {saveData};
+export {saveData, initWeb};

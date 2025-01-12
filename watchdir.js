@@ -1,13 +1,14 @@
 import {watch} from "chokidar";
 import fs from "node:fs";
 import * as crypto from "node:crypto";
-import {saveData} from "./dataStore.js";
+import {initWeb, saveData} from "./dataStore.js";
 import {debug} from "./debug.js";
 
 function sha256(data) {
     return crypto.createHash('sha256').update(data).digest('hex');
 }
 function watchDir(metadata, pwd) {
+    initWeb();
     debug('metadata', metadata);
     if (metadata.ignore?.length > 0) {
         debug('Ignoring:', metadata.ignore);

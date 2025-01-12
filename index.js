@@ -3,18 +3,20 @@ import * as readline from "node:readline";
 import {existsSync} from "node:fs";
 import {watchDir} from "./watchdir.js";
 import {setupMetadata} from "./setupMetadata.js";
-import {debug} from "./debug.js";
+import {OVCSSETTINGS} from "./const.js";
 const rl = readline.createInterface({input: process.stdin, output: process.stdout});
 const pwd = process.cwd();
 
 function checkInit() {
-    const exists = existsSync(pwd + '/.ovc');
+    const exists = existsSync(`${pwd}/${OVCSSETTINGS.ROOT_DIR}`);
+    console.log(exists);
     if (!exists) {
-        debug('.ovc directory not found, initialize?');
+        console.log('.ovcs directory not found, initialize?');
         rl.question('Press [Y] to continue: ', ans => {
             if (ans === 'y') {
-                const metadata = setupMetadata(true);
                 rl.close();
+                const metadata = setupMetadata(true, pwd);
+                console.log(metadata);
                 watchDir(metadata, pwd);
             } else {
                 console.error('ovc not initialized');
