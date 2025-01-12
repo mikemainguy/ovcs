@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import {debug} from "./debug.js";
 import express from "express";
 import {OVCSSETTINGS} from "./const.js";
+import fs from "node:fs";
 
 
 let db = null;
@@ -52,7 +53,10 @@ function web() {
         const count = await db.info();
         res.header('content-type', 'application/json').send(JSON.stringify(count));
     });
-    app.use(express.static('web'));
+    app.get("/", async (req, res) => {
+        const file = fs.readFileSync('web/index.html')
+       res.send(file.toString('utf-8'));
+    });
     const WEB_PORT = process.env.OVCS_WEB_PORT || 3001;
     try {
         app.listen(WEB_PORT, () => {
