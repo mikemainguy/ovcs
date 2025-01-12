@@ -4,14 +4,17 @@ import {debug} from "./debug.js";
 import express from "express";
 import {OVCSSETTINGS} from "./const.js";
 
-const db = new PouchDB(`leveldb://${OVCSSETTINGS.ROOT_DIR}/localdb`);
 
+let db = null;
 
 function sha256(data) {
     return crypto.createHash('sha256').update(data).digest('hex');
 }
 
 async function saveData(data) {
+    if (!db) {
+        db = new PouchDB(`leveldb://${OVCSSETTINGS.ROOT_DIR}/localdb`);
+    }
     try {
         const existing = await db.get(sha256(data.id))
         debug('existing', existing);
@@ -37,9 +40,13 @@ async function saveData(data) {
 
 }
 function initWeb() {
-    web(db);
+    web();
 }
-function web(db) {
+function web() {
+    if (!db) {
+        db = new PouchDB(`leveldb://${OVCSSETTINGS.ROOT_DIR}/localdb`);
+    }
+    //const db = new PouchDB(`leveldb://${OVCSSETTINGS.ROOT_DIR}/localdb`);
     const app = express();
     app.get("/info", async (req, res) => {
         const count = await db.info();
