@@ -55,9 +55,7 @@ function web() {
         res.header('content-type', 'application/json').send(JSON.stringify(count));
     });
     app.get("/", async (req, res) => {
-
-        console.log(import.meta.dirname);
-        const file = fs.readFileSync('web/index.html')
+        const file = fs.readFileSync(import.meta.dirname + '/web/index.html')
        res.send(file.toString('utf-8'));
     });
     const WEB_PORT = process.env.OVCS_WEB_PORT || 3001;
