@@ -8,7 +8,11 @@ function sha256(data) {
     return crypto.createHash('sha256').update(data).digest('hex');
 }
 function watchDir(metadata, pwd) {
-    initWeb();
+    if (!metadata.email) {
+        console.error('Email not set in .ovcs/ovcs.json');
+        process.exit(1);
+    }
+    initWeb(metadata);
     debug('metadata', metadata);
     if (metadata.ignore?.length > 0) {
         debug('Ignoring:', metadata.ignore);
@@ -38,20 +42,21 @@ function watchDir(metadata, pwd) {
                             console.error('Error reading file:', path, err);
                         }
                         const hash = sha256(data);
-                        saveData({id: path, type: type, hash: hash})
+                        const base64 = data.toString('base64');
+                        saveData({id: path, type: type, hash: hash, base64: base64}, metadata)
                         debug('add', path, hash);
                     });
                 } else {
-                    saveData({id: path, type: type})
+                    saveData({id: path, type: type}, metadata)
                     debug('add', path);
                 }
                 break;
             case 'addDir':
-                saveData({id: path, type: type})
+                saveData({id: path, type: type}, metadata)
                 debug('addDir', path);
                 break;
             case 'unlink':
-                saveData({id: path, type: type})
+                saveData({id: path, type: type}, metadata)
                 debug('unlink', path);
                 break;
             default:

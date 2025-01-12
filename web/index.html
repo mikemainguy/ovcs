@@ -8,13 +8,12 @@
     <div id="info"></div>
     <script>
         window.setInterval(function() {
-            location.reload();
+            fetch('/info')
+                .then(response => response.json())
+                .then(data => {
+                    document.querySelector('#info').innerText = JSON.stringify(data);
+                });
         }, 2000);
-        fetch('/info')
-            .then(response => response.json())
-            .then(data => {
-                document.querySelector('#info').innerText = JSON.stringify(data);
-            });
     </script>
 </body>
 </html>
