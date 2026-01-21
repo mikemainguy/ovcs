@@ -162,7 +162,7 @@
             const content = document.getElementById('content');
 
             if (!data || data.length === 0) {
-                content.innerHTML = '<div class="no-conflicts">No conflicts detected. All files have single revisions.</div>';
+                content.innerHTML = '<div class="no-conflicts">No differences detected.</div>';
                 return;
             }
 
@@ -173,20 +173,37 @@
                 const revisions = doc.revisions;
                 const emails = Object.keys(revisions);
 
-                if (emails.length < 2) return;
+                let leftLabel, rightLabel, leftContent, rightContent, leftTimestamp, rightTimestamp;
 
-                // Get first two revisions for comparison
-                const [email1, email2] = emails;
-                const rev1 = revisions[email1];
-                const rev2 = revisions[email2];
+                if (emails.length >= 2) {
+                    // Multiple revisions: compare first two users
+                    const [email1, email2] = emails;
+                    leftLabel = email1;
+                    rightLabel = email2;
+                    leftContent = revisions[email1].content;
+                    rightContent = revisions[email2].content;
+                    leftTimestamp = revisions[email1].updated;
+                    rightTimestamp = revisions[email2].updated;
+                } else if (emails.length === 1) {
+                    // Single revision: compare main (current) vs revision
+                    const email = emails[0];
+                    leftLabel = 'Current (local)';
+                    rightLabel = email;
+                    leftContent = doc.content || '';
+                    rightContent = revisions[email].content;
+                    leftTimestamp = null;
+                    rightTimestamp = revisions[email].updated;
+                } else {
+                    return;
+                }
 
                 const diffId = `diff-${index}`;
                 const unifiedDiff = createUnifiedDiff(
                     doc.file,
-                    rev1.content,
-                    rev2.content,
-                    `${email1} (${formatTimestamp(rev1.updated)})`,
-                    `${email2} (${formatTimestamp(rev2.updated)})`
+                    leftContent,
+                    rightContent,
+                    `${leftLabel}${leftTimestamp ? ' (' + formatTimestamp(leftTimestamp) + ')' : ''}`,
+                    `${rightLabel} (${formatTimestamp(rightTimestamp)})`
                 );
 
                 const diffHtml = renderDiff(unifiedDiff, currentView === 'side-by-side' ? 'side-by-side' : 'line-by-line');
@@ -197,12 +214,12 @@
                             <h2>${doc.file}</h2>
                             <div class="revision-info">
                                 <div class="revision-item">
-                                    <strong>Left:</strong> ${email1}
-                                    <span class="timestamp">${formatTimestamp(rev1.updated)}</span>
+                                    <strong>Left:</strong> ${leftLabel}
+                                    ${leftTimestamp ? `<span class="timestamp">${formatTimestamp(leftTimestamp)}</span>` : ''}
                                 </div>
                                 <div class="revision-item">
-                                    <strong>Right:</strong> ${email2}
-                                    <span class="timestamp">${formatTimestamp(rev2.updated)}</span>
+                                    <strong>Right:</strong> ${rightLabel}
+                                    <span class="timestamp">${formatTimestamp(rightTimestamp)}</span>
                                 </div>
                                 ${emails.length > 2 ? `<div class="revision-item"><strong>+${emails.length - 2} more revision(s)</strong></div>` : ''}
                             </div>
@@ -219,7 +236,7 @@
             });
 
             if (html === '') {
-                content.innerHTML = '<div class="no-conflicts">No conflicts detected. All files have single revisions.</div>';
+                content.innerHTML = '<div class="no-conflicts">No differences detected.</div>';
             } else {
                 content.innerHTML = html;
             }

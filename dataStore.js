@@ -144,17 +144,28 @@ async function initWeb(metadata, pwd, port) {
 }
 // Deserialize revisions by decoding base64 content to readable text
 function deserializeRevisions(doc) {
-    if (!doc.revisions) return doc;
+    const deserialized = { ...doc };
 
-    const deserialized = { ...doc, revisions: {} };
-    for (const [email, revision] of Object.entries(doc.revisions)) {
-        deserialized.revisions[email] = { ...revision };
-        if (revision.content) {
-            try {
-                deserialized.revisions[email].content = Buffer.from(revision.content, 'base64').toString('utf-8');
-            } catch (err) {
-                // Keep original if decode fails (binary content)
-                deserialized.revisions[email].content = '[binary content]';
+    // Decode main base64 content if present
+    if (doc.base64) {
+        try {
+            deserialized.content = Buffer.from(doc.base64, 'base64').toString('utf-8');
+        } catch (err) {
+            deserialized.content = '[binary content]';
+        }
+    }
+
+    // Decode revision contents
+    if (doc.revisions) {
+        deserialized.revisions = {};
+        for (const [email, revision] of Object.entries(doc.revisions)) {
+            deserialized.revisions[email] = { ...revision };
+            if (revision.content) {
+                try {
+                    deserialized.revisions[email].content = Buffer.from(revision.content, 'base64').toString('utf-8');
+                } catch (err) {
+                    deserialized.revisions[email].content = '[binary content]';
+                }
             }
         }
     }
@@ -184,10 +195,19 @@ function web(port) {
     app.get("/diff", async (req, res) => {
         const data = await db.allDocs({include_docs: true});
         const deserialize = req.query.deserialize !== 'false';
-        let diff = data.rows.filter(doc => {
-            if (doc.doc.revisions) {
-                return Object.keys(doc.doc.revisions).length > 1;
-            }});
+        let diff = data.rows.filter(row => {
+            const doc = row.doc;
+            if (!doc.revisions) return false;
+            const revisionKeys = Object.keys(doc.revisions);
+            // Case 1: Multiple revisions (conflict between users)
+            if (revisionKeys.length > 1) return true;
+            // Case 2: Single revision with hash different from main (local differs from revision)
+            if (revisionKeys.length === 1) {
+                const revision = doc.revisions[revisionKeys[0]];
+                return revision.hash !== doc.hash;
+            }
+            return false;
+        });
         if (deserialize) {
             diff = diff.map(row => ({
                 ...row,
