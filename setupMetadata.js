@@ -9,6 +9,11 @@ const defaultMetadata = {
         'enabled': true,
         'fullText': true,
         'ast': true
+    },
+    'sync': {
+        'enabled': false,
+        'live': true,
+        'retry': true
     }
 }
 function setupMetadata(override, pwd) {

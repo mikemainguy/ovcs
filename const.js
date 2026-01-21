@@ -1,6 +1,7 @@
 const OVCSSETTINGS = {
     ROOT_DIR: '.ovcs',
     OVCS_WEB_PORT: process.env.OVCS_WEB_PORT || 3001,
+    OVCS_SYNC_PORT: process.env.OVCS_SYNC_PORT || 5984,
     // Vector DB settings
     VECTOR_DB_DIR: 'vectordb',
     MODELS_DIR: 'models',

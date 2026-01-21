@@ -1,3 +1,4 @@
+console.log('=== dataStore.js loading ===');
 import PouchDB from "pouchdb";
 import crypto from "node:crypto";
 import {debug} from "./debug.js";
@@ -10,6 +11,7 @@ import { setupSearchRoutes } from './searchApi.js';
 
 
 let db = null;
+let syncHandler = null;
 
 function sha256(data) {
     return crypto.createHash('sha256').update(data).digest('hex');
@@ -101,9 +103,23 @@ async function initWeb(metadata, pwd) {
     } catch (err) {
         debug('Error initializing vector sync:', err);
     }
+
+    // Initialize remote PouchDB sync if enabled
+    if (metadata.sync?.enabled && metadata.remote) {
+        try {
+            await initRemoteSync(metadata);
+            debug('Remote sync initialized');
+        } catch (err) {
+            debug('Error initializing remote sync:', err);
+        }
+    }
+
+    console.log('Calling web()...');
     web(metadata);
+    console.log('initWeb complete');
 }
 function web() {
+    console.log('web() starting...');
     const app = express();
     if (!db) {
         db = new PouchDB(`leveldb://${OVCSSETTINGS.ROOT_DIR}/localdb`);
@@ -149,4 +165,77 @@ function web() {
 
 }
 
-export {saveData, initWeb};
+async function initRemoteSync(metadata) {
+    if (!metadata.remote || !metadata.sync?.enabled) {
+        console.log('Remote sync disabled or no remote configured');
+        return;
+    }
+
+    if (!db) {
+        db = new PouchDB(`leveldb://${OVCSSETTINGS.ROOT_DIR}/localdb`);
+    }
+
+    console.log(`Connecting to remote: ${metadata.remote}`);
+
+    const remoteDb = new PouchDB(metadata.remote);
+
+    // Test connection to remote
+    try {
+        const remoteInfo = await remoteDb.info();
+        console.log(`Remote DB connected: ${remoteInfo.db_name} (${remoteInfo.doc_count} docs)`);
+    } catch (err) {
+        console.error(`Failed to connect to remote: ${err.message}`);
+        console.error('Make sure the server is running and the URL is correct');
+        return;
+    }
+
+    const localInfo = await db.info();
+    console.log(`Local DB: ${localInfo.db_name} (${localInfo.doc_count} docs)`);
+
+    const syncOptions = {
+        live: metadata.sync.live !== false,
+        retry: metadata.sync.retry !== false
+    };
+
+    console.log(`Starting sync with options:`, syncOptions);
+
+    syncHandler = db.sync(remoteDb, syncOptions)
+        .on('change', info => {
+            console.log(`Sync ${info.direction}: ${info.change?.docs?.length || 0} docs`);
+            debug('Sync change details:', info);
+        })
+        .on('paused', err => {
+            if (err) {
+                console.error('Sync paused with error:', err.message);
+            } else {
+                console.log('Sync paused (up to date)');
+            }
+        })
+        .on('active', () => {
+            console.log('Sync active');
+        })
+        .on('denied', err => {
+            console.error('Sync denied:', err);
+        })
+        .on('complete', info => {
+            console.log('Sync complete');
+            debug('Sync complete details:', info);
+        })
+        .on('error', err => {
+            console.error('Sync error:', err.message || err);
+        });
+
+    console.log('initRemoteSync() setup complete');
+    // Don't return syncHandler - it's thenable and would block await
+    // The handler is stored in the module-level syncHandler variable
+}
+
+function stopRemoteSync() {
+    if (syncHandler) {
+        syncHandler.cancel();
+        syncHandler = null;
+        debug('Remote sync stopped');
+    }
+}
+
+export {saveData, initWeb, initRemoteSync, stopRemoteSync};

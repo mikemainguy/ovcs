@@ -17,12 +17,24 @@ async function watchDir(metadata, pwd) {
     if (metadata.ignore?.length > 0) {
         debug('Ignoring:', metadata.ignore);
     }
+    console.log('Starting file watcher...');
+    console.log('Ignored patterns:', metadata.ignore);
+
     const watcher = watch('.',
         {
             ignored: metadata.ignore,
             ignoreInitial: false,
             persistent: true
         });
+
+    let initialScanCount = 0;
+    let initialScanDone = false;
+
+    watcher.on('ready', () => {
+        initialScanDone = true;
+        console.log(`Initial scan complete: ${initialScanCount} files found`);
+    });
+
     watcher.on('all', (event, path) => {
         let type = ""
         try {
@@ -36,23 +48,33 @@ async function watchDir(metadata, pwd) {
         switch (event) {
             case 'add':
             case 'change':
+                if (!initialScanDone) {
+                    initialScanCount++;
+                }
                 if (type === 'file') {
                     fs.readFile(path, function (err, data) {
                         if (err) {
                             console.error('Error reading file:', path, err);
+                            return;
                         }
                         const hash = sha256(data);
                         const base64 = data.toString('base64');
-                        saveData({id: path, type: type, hash: hash, base64: base64}, metadata)
+                        saveData({id: path, type: type, hash: hash, base64: base64}, metadata);
+                        if (initialScanDone) {
+                            console.log(`File ${event}: ${path}`);
+                        }
                         debug('add', path, hash);
                     });
                 } else {
-                    saveData({id: path, type: type}, metadata)
+                    saveData({id: path, type: type}, metadata);
                     debug('add', path);
                 }
                 break;
             case 'addDir':
-                saveData({id: path, type: type}, metadata)
+                if (!initialScanDone) {
+                    initialScanCount++;
+                }
+                saveData({id: path, type: type}, metadata);
                 debug('addDir', path);
                 break;
             case 'unlink':
