@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OVCS - Diff Viewer</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/diff2html/bundles/css/diff2html.min.css">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            margin: 0 0 20px 0;
+            color: #333;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .refresh-info {
+            color: #666;
+            font-size: 14px;
+        }
+        .no-conflicts {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .conflict-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .conflict-header {
+            background: #fff3cd;
+            border-bottom: 1px solid #ffc107;
+            padding: 15px 20px;
+        }
+        .conflict-header h2 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #856404;
+            word-break: break-all;
+        }
+        .revision-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            font-size: 13px;
+            color: #666;
+        }
+        .revision-item {
+            background: #f8f9fa;
+            padding: 8px 12px;
+            border-radius: 4px;
+        }
+        .revision-item strong {
+            color: #333;
+        }
+        .revision-item .timestamp {
+            color: #888;
+            font-size: 11px;
+            display: block;
+            margin-top: 4px;
+        }
+        .diff-container {
+            overflow-x: auto;
+        }
+        .d2h-wrapper {
+            font-size: 13px;
+        }
+        .view-toggle {
+            margin-bottom: 10px;
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #eee;
+        }
+        .view-toggle button {
+            padding: 6px 12px;
+            margin-right: 8px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .view-toggle button.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .view-toggle button:hover:not(.active) {
+            background: #f0f0f0;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>OVCS Diff Viewer</h1>
+        <div class="refresh-info">Auto-refreshes every 5 seconds</div>
+    </div>
+    <div id="content">
+        <div class="loading">Loading conflicts...</div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/diff/dist/diff.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html.min.js"></script>
+    <script>
+        let currentView = 'side-by-side';
+
+        function createUnifiedDiff(filename, oldText, newText, oldHeader, newHeader) {
+            const diff = Diff.createTwoFilesPatch(
+                'a/' + filename,
+                'b/' + filename,
+                oldText || '',
+                newText || '',
+                oldHeader,
+                newHeader
+            );
+            return diff;
+        }
+
+        function renderDiff(diffString, outputFormat) {
+            return Diff2Html.html(diffString, {
+                drawFileList: false,
+                matching: 'lines',
+                outputFormat: outputFormat,
+                renderNothingWhenEmpty: false
+            });
+        }
+
+        function formatTimestamp(isoString) {
+            if (!isoString) return 'Unknown';
+            const date = new Date(isoString);
+            return date.toLocaleString();
+        }
+
+        function renderConflicts(data) {
+            const content = document.getElementById('content');
+
+            if (!data || data.length === 0) {
+                content.innerHTML = '<div class="no-conflicts">No conflicts detected. All files have single revisions.</div>';
+                return;
+            }
+
+            let html = '';
+
+            data.forEach((item, index) => {
+                const doc = item.doc;
+                const revisions = doc.revisions;
+                const emails = Object.keys(revisions);
+
+                if (emails.length < 2) return;
+
+                // Get first two revisions for comparison
+                const [email1, email2] = emails;
+                const rev1 = revisions[email1];
+                const rev2 = revisions[email2];
+
+                const diffId = `diff-${index}`;
+                const unifiedDiff = createUnifiedDiff(
+                    doc.file,
+                    rev1.content,
+                    rev2.content,
+                    `${email1} (${formatTimestamp(rev1.updated)})`,
+                    `${email2} (${formatTimestamp(rev2.updated)})`
+                );
+
+                const diffHtml = renderDiff(unifiedDiff, currentView === 'side-by-side' ? 'side-by-side' : 'line-by-line');
+
+                html += `
+                    <div class="conflict-card">
+                        <div class="conflict-header">
+                            <h2>${doc.file}</h2>
+                            <div class="revision-info">
+                                <div class="revision-item">
+                                    <strong>Left:</strong> ${email1}
+                                    <span class="timestamp">${formatTimestamp(rev1.updated)}</span>
+                                </div>
+                                <div class="revision-item">
+                                    <strong>Right:</strong> ${email2}
+                                    <span class="timestamp">${formatTimestamp(rev2.updated)}</span>
+                                </div>
+                                ${emails.length > 2 ? `<div class="revision-item"><strong>+${emails.length - 2} more revision(s)</strong></div>` : ''}
+                            </div>
+                        </div>
+                        <div class="view-toggle">
+                            <button class="${currentView === 'side-by-side' ? 'active' : ''}" onclick="setView('side-by-side')">Side by Side</button>
+                            <button class="${currentView === 'line-by-line' ? 'active' : ''}" onclick="setView('line-by-line')">Line by Line</button>
+                        </div>
+                        <div class="diff-container" id="${diffId}">
+                            ${diffHtml}
+                        </div>
+                    </div>
+                `;
+            });
+
+            if (html === '') {
+                content.innerHTML = '<div class="no-conflicts">No conflicts detected. All files have single revisions.</div>';
+            } else {
+                content.innerHTML = html;
+            }
+        }
+
+        function setView(view) {
+            currentView = view;
+            fetchAndRender();
+        }
+
+        async function fetchAndRender() {
+            try {
+                const response = await fetch('/diff');
+                if (!response.ok) {
+                    throw new Error(`HTTP error: ${response.status}`);
+                }
+                const data = await response.json();
+                renderConflicts(data);
+            } catch (error) {
+                document.getElementById('content').innerHTML =
+                    `<div class="error">Error loading diff data: ${error.message}</div>`;
+            }
+        }
+
+        // Initial load
+        fetchAndRender();
+
+        // Auto-refresh every 5 seconds
+        setInterval(fetchAndRender, 5000);
+    </script>
+</body>
+</html>

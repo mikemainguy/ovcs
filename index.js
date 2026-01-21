@@ -10,23 +10,24 @@ const args = process.argv.slice(2);
 const isServerMode = args.includes('--server');
 
 // Parse --port flag
-function getPort() {
+function getPort(defaultPort) {
     const portIdx = args.indexOf('--port');
     if (portIdx !== -1 && args[portIdx + 1]) {
         const port = parseInt(args[portIdx + 1], 10);
         if (!isNaN(port)) return port;
     }
-    return OVCSSETTINGS.OVCS_SYNC_PORT;
+    return defaultPort;
 }
 
 if (isServerMode) {
     // Server mode: start express-pouchdb replication hub
-    const port = getPort();
+    const port = getPort(OVCSSETTINGS.OVCS_SYNC_PORT);
     startServer({ port });
 } else {
     // Client mode: watch directory and sync
     const rl = readline.createInterface({input: process.stdin, output: process.stdout});
     const pwd = process.cwd();
+    const port = getPort(OVCSSETTINGS.OVCS_WEB_PORT);
 
     async function checkInit() {
         const exists = existsSync(`${pwd}/${OVCSSETTINGS.ROOT_DIR}`);
@@ -38,7 +39,7 @@ if (isServerMode) {
                     rl.close();
                     const metadata = setupMetadata(true, pwd);
                     console.log(metadata);
-                    await watchDir(metadata, pwd);
+                    await watchDir(metadata, pwd, port);
                 } else {
                     console.error('ovc not initialized');
                     rl.close();
@@ -47,7 +48,7 @@ if (isServerMode) {
             });
         } else {
             const metadata = setupMetadata(false, pwd);
-            await watchDir(metadata, pwd);
+            await watchDir(metadata, pwd, port);
         }
     }
     checkInit();
