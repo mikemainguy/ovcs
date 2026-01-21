@@ -7,17 +7,17 @@ import {OVCSSETTINGS} from "./const.js";
 const rl = readline.createInterface({input: process.stdin, output: process.stdout});
 const pwd = process.cwd();
 
-function checkInit() {
+async function checkInit() {
     const exists = existsSync(`${pwd}/${OVCSSETTINGS.ROOT_DIR}`);
     console.log(exists);
     if (!exists) {
         console.log('.ovcs directory not found, initialize?');
-        rl.question('Press [Y] to continue: ', ans => {
+        rl.question('Press [Y] to continue: ', async ans => {
             if (ans === 'y') {
                 rl.close();
                 const metadata = setupMetadata(true, pwd);
                 console.log(metadata);
-                watchDir(metadata, pwd);
+                await watchDir(metadata, pwd);
             } else {
                 console.error('ovc not initialized');
                 rl.close();
@@ -26,7 +26,7 @@ function checkInit() {
         });
     } else {
         const metadata = setupMetadata(false, pwd);
-        watchDir(metadata, pwd);
+        await watchDir(metadata, pwd);
     }
 }
 checkInit();

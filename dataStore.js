@@ -5,6 +5,8 @@ import express from "express";
 import {OVCSSETTINGS} from "./const.js";
 import fs from "node:fs";
 import * as path from "node:path";
+import { syncFileToVectorDB, removeFileFromVectorDB, initVectorSync, isVectorSyncInitialized } from './vectorSync.js';
+import { setupSearchRoutes } from './searchApi.js';
 
 
 let db = null;
@@ -17,6 +19,14 @@ async function saveData(data, metadata) {
     if (!db) {
         db = new PouchDB(`leveldb://${OVCSSETTINGS.ROOT_DIR}/localdb`);
     }
+
+    // Handle delete immediately - remove from vector DB
+    if (data.type === 'delete') {
+        removeFileFromVectorDB(data.id).catch(err => {
+            debug('Vector delete error:', err);
+        });
+    }
+
     try {
         const existing = await db.get(sha256(data.id))
         debug('existing', existing);
@@ -52,22 +62,45 @@ async function saveData(data, metadata) {
         const newDoc = {...existing, ...{type: data.type, hash: data.hash}};
         debug(JSON.stringify(newDoc));
         await db.put(newDoc);
+
+        // Sync to vector DB after successful PouchDB update
+        if (data.type === 'file' && data.base64) {
+            syncFileToVectorDB(data, metadata).catch(err => {
+                debug('Vector sync error:', err);
+            });
+        }
     } catch (err) {
-        debug('error', err);
         if (err.status === 404) {
+            // New file - create document
+            debug('new file', data.id);
             try {
                 await db.put({...data, _id: sha256(data.id), file: data.id});
-            } catch (err) {
-                debug('error saving data', err);
+
+                // Sync to vector DB after successful PouchDB insert
+                if (data.type === 'file' && data.base64) {
+                    syncFileToVectorDB(data, metadata).catch(err => {
+                        debug('Vector sync error:', err);
+                    });
+                }
+            } catch (putErr) {
+                debug('error saving data', putErr);
             }
-        }
-        if (err.status === 409) {
+        } else if (err.status === 409) {
             debug('conflict', data.id);
+        } else {
+            debug('error', err);
         }
     }
 
 }
-function initWeb(metadata) {
+async function initWeb(metadata, pwd) {
+    // Initialize vector sync
+    try {
+        await initVectorSync(pwd);
+        debug('Vector sync initialized for web');
+    } catch (err) {
+        debug('Error initializing vector sync:', err);
+    }
     web(metadata);
 }
 function web() {
@@ -99,6 +132,10 @@ function web() {
         const file = fs.readFileSync(import.meta.dirname + '/web/index.html')
        res.send(file.toString('utf-8'));
     });
+
+    // Setup vector search routes
+    setupSearchRoutes(app, db);
+
     const WEB_PORT = process.env.OVCS_WEB_PORT || 3001;
     try {
         app.listen(WEB_PORT, () => {

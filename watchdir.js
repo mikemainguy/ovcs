@@ -7,12 +7,12 @@ import {debug} from "./debug.js";
 function sha256(data) {
     return crypto.createHash('sha256').update(data).digest('hex');
 }
-function watchDir(metadata, pwd) {
+async function watchDir(metadata, pwd) {
     if (!metadata.email) {
         console.error('Email not set in .ovcs/ovcs.json');
         process.exit(1);
     }
-    initWeb(metadata);
+    await initWeb(metadata, pwd);
     debug('metadata', metadata);
     if (metadata.ignore?.length > 0) {
         debug('Ignoring:', metadata.ignore);

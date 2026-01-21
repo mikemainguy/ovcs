@@ -5,6 +5,11 @@ const defaultMetadata = {
     'email': 'ovcs',
     'remote': '',
     'ignore': ['dist', 'node_modules', '.git', '.ovcs', '.idea'],
+    'vector': {
+        'enabled': true,
+        'fullText': true,
+        'ast': true
+    }
 }
 function setupMetadata(override, pwd) {
     const dir = `${pwd}/${OVCSSETTINGS.ROOT_DIR}`;

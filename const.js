@@ -1,5 +1,20 @@
 const OVCSSETTINGS = {
     ROOT_DIR: '.ovcs',
-    OVCS_WEB_PORT: process.env.OVCS_WEB_PORT || 3001
+    OVCS_WEB_PORT: process.env.OVCS_WEB_PORT || 3001,
+    // Vector DB settings
+    VECTOR_DB_DIR: 'vectordb',
+    MODELS_DIR: 'models',
+    EMBEDDING_MODEL: 'Xenova/all-MiniLM-L6-v2',
+    EMBEDDING_DIMENSIONS: 384,
+    CHUNK_SIZE: 512,
+    CHUNK_OVERLAP: 50,
+    // Language mappings for AST parsing
+    LANGUAGE_MAP: {
+        '.js': 'javascript',
+        '.mjs': 'javascript',
+        '.jsx': 'javascript',
+        '.ts': 'typescript',
+        '.tsx': 'typescript'
+    }
 }
 export {OVCSSETTINGS};
