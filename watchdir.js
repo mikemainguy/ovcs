@@ -3,24 +3,26 @@ import fs from "node:fs";
 import * as crypto from "node:crypto";
 import {initWeb, saveData} from "./dataStore.js";
 import {debug} from "./debug.js";
+import {compress} from "./compression.js";
 
 function sha256(data) {
     return crypto.createHash('sha256').update(data).digest('hex');
 }
-async function watchDir(metadata, pwd, port) {
+async function watchDir(metadata, pwd, port, options = {}) {
     if (!metadata.email) {
         console.error('Email not set in .ovcs/ovcs.json');
         process.exit(1);
     }
-    await initWeb(metadata, pwd, port);
+    await initWeb(metadata, pwd, port, options);
     debug('metadata', metadata);
     if (metadata.ignore?.length > 0) {
         debug('Ignoring:', metadata.ignore);
     }
-    console.log('Starting file watcher...');
+    const baseDirectory = options.baseDirectory || metadata.baseDirectory || '.';
+    console.log(`Starting file watcher on: ${baseDirectory}`);
     console.log('Ignored patterns:', metadata.ignore);
 
-    const watcher = watch('.',
+    const watcher = watch(baseDirectory,
         {
             ignored: metadata.ignore,
             ignoreInitial: false,
@@ -56,8 +58,9 @@ async function watchDir(metadata, pwd, port) {
                         try {
                             const data = await fs.promises.readFile(path);
                             const hash = sha256(data);
-                            const base64 = data.toString('base64');
-                            await saveData({id: path, type: type, hash: hash, base64: base64}, metadata);
+                            const { data: compressed, method } = await compress(data, metadata.compression);
+                            const base64 = compressed.toString('base64');
+                            await saveData({id: path, type: type, hash: hash, base64: base64, compression: method}, metadata);
                             if (initialScanDone) {
                                 console.log(`File ${event}: ${path}`);
                             }

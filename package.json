@@ -1,18 +1,25 @@
 {
   "name": "ovcs",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "server": "node server-cli.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
     "scm",
     "version",
-    "control"
+    "control",
+    "ai",
+    "claude",
+    "agentic",
+    "code",
+    "p2p"
   ],
   "bin": {
-    "ovcs": "index.js"
+    "ovcs": "index.js",
+    "ovcs-server": "server-cli.js"
   },
   "type": "module",
   "author": "mike.mainguy@gmail.com",
@@ -24,12 +31,14 @@
     "diff": "^8.0.3",
     "diff2html": "^3.4.55",
     "express": "^4.21.1",
-    "express-pouchdb": "^4.2.0",
-    "leveldown": "^6.1.1",
-    "pouchdb": "^9.0.0",
+    "lokijs": "^1.5.12",
+    "node-datachannel": "^0.32.1",
+    "rxdb": "^16.21.1",
+    "rxdb-server": "^16.21.1",
     "tree-sitter": "^0.20.4",
     "tree-sitter-javascript": "^0.20.1",
-    "tree-sitter-typescript": "^0.20.3"
+    "tree-sitter-typescript": "^0.20.3",
+    "ws": "^8.20.0"
   },
   "description": "quick and dirty realtime version control for a directory, helps avoid conflicts on distributed teams",
   "devDependencies": {

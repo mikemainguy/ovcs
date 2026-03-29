@@ -9,6 +9,13 @@ const OVCSSETTINGS = {
     EMBEDDING_DIMENSIONS: 384,
     CHUNK_SIZE: 512,
     CHUNK_OVERLAP: 50,
+    // Compression settings
+    DEFAULT_COMPRESSION_ALGORITHM: 'gzip',
+    DEFAULT_COMPRESSION_LEVEL: 6,
+    // Presence/discovery settings
+    PRESENCE_DB_PREFIX: 'ovcs-presence-',
+    HEARTBEAT_INTERVAL: 30000,
+    STALE_TIMEOUT: 120000,
     // Language mappings for AST parsing
     LANGUAGE_MAP: {
         '.js': 'javascript',

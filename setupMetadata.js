@@ -1,9 +1,18 @@
 import fs, {existsSync} from "node:fs";
+import crypto from "node:crypto";
 import {debug} from "./debug.js";
 import {OVCSSETTINGS} from "./const.js";
 const defaultMetadata = {
+    'baseDirectory': '.',
+    'clientId': crypto.randomUUID(),
     'email': 'ovcs',
     'remote': '',
+    'teamId': crypto.randomUUID(),
+    'compression': {
+        'enabled': true,
+        'algorithm': OVCSSETTINGS.DEFAULT_COMPRESSION_ALGORITHM,
+        'level': OVCSSETTINGS.DEFAULT_COMPRESSION_LEVEL
+    },
     'ignore': ['dist', 'node_modules', '.git', '.ovcs', '.idea'],
     'vector': {
         'enabled': true,
@@ -14,6 +23,15 @@ const defaultMetadata = {
         'enabled': false,
         'live': true,
         'retry': true
+    },
+    'presence': {
+        'enabled': true,
+        'heartbeatInterval': OVCSSETTINGS.HEARTBEAT_INTERVAL,
+        'staleTimeout': OVCSSETTINGS.STALE_TIMEOUT
+    },
+    'p2p': {
+        'enabled': false,
+        'signalingServer': ''
     }
 }
 function setupMetadata(override, pwd) {

@@ -103,6 +103,24 @@
         .view-toggle button:hover:not(.active) {
             background: #f0f0f0;
         }
+        .missing-badge {
+            display: inline-block;
+            background: #dc3545;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        .missing-header {
+            background: #f8d7da !important;
+            border-bottom-color: #f5c6cb !important;
+        }
+        .missing-header h2 {
+            color: #721c24 !important;
+        }
         .error {
             background: #f8d7da;
             border: 1px solid #f5c6cb;
@@ -130,6 +148,8 @@
     <script src="https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html.min.js"></script>
     <script>
         let currentView = 'side-by-side';
+        let currentUserEmail = null;
+        let currentClientId = null;
 
         function createUnifiedDiff(filename, oldText, newText, oldHeader, newHeader) {
             const diff = Diff.createTwoFilesPatch(
@@ -170,31 +190,71 @@
 
             data.forEach((item, index) => {
                 const doc = item.doc;
-                const revisions = doc.revisions;
-                const emails = Object.keys(revisions);
+                const missingLocally = item.missingLocally;
+                const revisions = doc.revisions || {};
+                const revKeys = Object.keys(revisions);
+
+                // Helper: get display name for a revision key (email field or fall back to key)
+                function displayName(key) {
+                    return revisions[key]?.email || key;
+                }
+
+                // Find local revision: match by clientId or email
+                const localKey = revKeys.find(k =>
+                    k === currentClientId ||
+                    revisions[k]?.email === currentUserEmail ||
+                    k === currentUserEmail
+                );
+                const otherKeys = revKeys.filter(k => k !== localKey);
 
                 let leftLabel, rightLabel, leftContent, rightContent, leftTimestamp, rightTimestamp;
 
-                if (emails.length >= 2) {
-                    // Multiple revisions: compare first two users
-                    const [email1, email2] = emails;
-                    leftLabel = email1;
-                    rightLabel = email2;
-                    leftContent = revisions[email1].content;
-                    rightContent = revisions[email2].content;
-                    leftTimestamp = revisions[email1].updated;
-                    rightTimestamp = revisions[email2].updated;
-                } else if (emails.length === 1) {
-                    // Single revision: compare main (current) vs revision
-                    const email = emails[0];
-                    leftLabel = 'Current (local)';
-                    rightLabel = email;
-                    leftContent = doc.content || '';
-                    rightContent = revisions[email].content;
-                    leftTimestamp = null;
-                    rightTimestamp = revisions[email].updated;
+                if (missingLocally) {
+                    if (revKeys.length > 0) {
+                        const remoteKey = revKeys[0];
+                        leftLabel = 'Local (missing)';
+                        leftContent = '';
+                        leftTimestamp = null;
+                        rightLabel = displayName(remoteKey);
+                        rightContent = revisions[remoteKey].content || doc.content || '';
+                        rightTimestamp = revisions[remoteKey].updated;
+                    } else {
+                        leftLabel = 'Local (missing)';
+                        leftContent = '';
+                        leftTimestamp = null;
+                        rightLabel = 'Remote';
+                        rightContent = doc.content || '';
+                        rightTimestamp = null;
+                    }
                 } else {
-                    return;
+                    const localRevision = localKey ? revisions[localKey] : null;
+
+                    if (localRevision && otherKeys.length > 0) {
+                        const otherKey = otherKeys[0];
+                        leftLabel = displayName(otherKey);
+                        leftContent = revisions[otherKey].content;
+                        leftTimestamp = revisions[otherKey].updated;
+                        rightLabel = 'Local';
+                        rightContent = localRevision.content;
+                        rightTimestamp = localRevision.updated;
+                    } else if (localRevision && otherKeys.length === 0) {
+                        leftLabel = 'Base';
+                        leftContent = doc.content || '';
+                        leftTimestamp = null;
+                        rightLabel = 'Local';
+                        rightContent = localRevision.content;
+                        rightTimestamp = localRevision.updated;
+                    } else if (!localRevision && revKeys.length >= 1) {
+                        const otherKey = revKeys[0];
+                        leftLabel = displayName(otherKey);
+                        leftContent = revisions[otherKey].content;
+                        leftTimestamp = revisions[otherKey].updated;
+                        rightLabel = 'Base';
+                        rightContent = doc.content || '';
+                        rightTimestamp = null;
+                    } else {
+                        return;
+                    }
                 }
 
                 const diffId = `diff-${index}`;
@@ -203,15 +263,15 @@
                     leftContent,
                     rightContent,
                     `${leftLabel}${leftTimestamp ? ' (' + formatTimestamp(leftTimestamp) + ')' : ''}`,
-                    `${rightLabel} (${formatTimestamp(rightTimestamp)})`
+                    `${rightLabel}${rightTimestamp ? ' (' + formatTimestamp(rightTimestamp) + ')' : ''}`
                 );
 
                 const diffHtml = renderDiff(unifiedDiff, currentView === 'side-by-side' ? 'side-by-side' : 'line-by-line');
 
                 html += `
                     <div class="conflict-card">
-                        <div class="conflict-header">
-                            <h2>${doc.file}</h2>
+                        <div class="conflict-header ${missingLocally ? 'missing-header' : ''}">
+                            <h2>${doc.file}${missingLocally ? '<span class="missing-badge">Missing locally</span>' : ''}</h2>
                             <div class="revision-info">
                                 <div class="revision-item">
                                     <strong>Left:</strong> ${leftLabel}
@@ -219,9 +279,9 @@
                                 </div>
                                 <div class="revision-item">
                                     <strong>Right:</strong> ${rightLabel}
-                                    <span class="timestamp">${formatTimestamp(rightTimestamp)}</span>
+                                    ${rightTimestamp ? `<span class="timestamp">${formatTimestamp(rightTimestamp)}</span>` : ''}
                                 </div>
-                                ${emails.length > 2 ? `<div class="revision-item"><strong>+${emails.length - 2} more revision(s)</strong></div>` : ''}
+                                ${otherKeys.length > 1 ? `<div class="revision-item"><strong>+${otherKeys.length - 1} more revision(s)</strong></div>` : ''}
                             </div>
                         </div>
                         <div class="view-toggle">
@@ -261,8 +321,21 @@
             }
         }
 
-        // Initial load
-        fetchAndRender();
+        // Initialize: fetch current user then start rendering
+        async function init() {
+            try {
+                const meResponse = await fetch('/me');
+                const meData = await meResponse.json();
+                currentUserEmail = meData.email;
+                currentClientId = meData.clientId;
+                console.log('Current user:', currentUserEmail, 'clientId:', currentClientId);
+            } catch (err) {
+                console.warn('Could not fetch current user:', err);
+            }
+            fetchAndRender();
+        }
+
+        init();
 
         // Auto-refresh every 5 seconds
         setInterval(fetchAndRender, 5000);

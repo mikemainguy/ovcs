@@ -5,15 +5,39 @@ import {watchDir} from "./watchdir.js";
 import {setupMetadata} from "./setupMetadata.js";
 import {OVCSSETTINGS} from "./const.js";
 import {startServer} from "./server.js";
+import {stopPresence} from "./presence.js";
+import {stopPersistence} from "./dataStore.js";
+import {stopP2P} from "./p2p.js";
 
 const args = process.argv.slice(2);
-const isServerMode = args.includes('--server');
 
-// Parse --port flag
+// Graceful shutdown — mark presence as offline
+function setupShutdownHandlers() {
+    const shutdown = async () => {
+        console.log('\nShutting down...');
+        await stopPresence();
+        await stopP2P();
+        stopPersistence();
+        process.exit(0);
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+}
+setupShutdownHandlers();
+const isServerMode = args.includes('--server');
+const isP2PMode = args.includes('--p2p');
+
+// Parse a --flag value pair from args
+function getArg(flag, defaultValue) {
+    const idx = args.indexOf(flag);
+    if (idx !== -1 && args[idx + 1]) return args[idx + 1];
+    return defaultValue;
+}
+
 function getPort(defaultPort) {
-    const portIdx = args.indexOf('--port');
-    if (portIdx !== -1 && args[portIdx + 1]) {
-        const port = parseInt(args[portIdx + 1], 10);
+    const val = getArg('--port', null);
+    if (val !== null) {
+        const port = parseInt(val, 10);
         if (!isNaN(port)) return port;
     }
     return defaultPort;
@@ -22,7 +46,8 @@ function getPort(defaultPort) {
 if (isServerMode) {
     // Server mode: start express-pouchdb replication hub
     const port = getPort(OVCSSETTINGS.OVCS_SYNC_PORT);
-    startServer({ port });
+    const host = getArg('--host', undefined);
+    startServer({ port, host });
 } else {
     // Client mode: watch directory and sync
     const rl = readline.createInterface({input: process.stdin, output: process.stdout});
@@ -39,7 +64,8 @@ if (isServerMode) {
                     rl.close();
                     const metadata = setupMetadata(true, pwd);
                     console.log(metadata);
-                    await watchDir(metadata, pwd, port);
+                    const baseDir = getArg('--dir', metadata.baseDirectory || '.');
+                    await watchDir(metadata, pwd, port, { p2p: isP2PMode, baseDirectory: baseDir });
                 } else {
                     console.error('ovc not initialized');
                     rl.close();
@@ -48,7 +74,8 @@ if (isServerMode) {
             });
         } else {
             const metadata = setupMetadata(false, pwd);
-            await watchDir(metadata, pwd, port);
+            const baseDir = getArg('--dir', metadata.baseDirectory || '.');
+            await watchDir(metadata, pwd, port, { p2p: isP2PMode, baseDirectory: baseDir });
         }
     }
     checkInit();
