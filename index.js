@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 import * as readline from "node:readline";
-import {existsSync} from "node:fs";
+import {existsSync, readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
+import {dirname, join} from "node:path";
 import {watchDir} from "./watchdir.js";
 import {setupMetadata} from "./setupMetadata.js";
 import {OVCSSETTINGS} from "./const.js";
 import {startServer} from "./server.js";
 import {stopPresence} from "./presence.js";
-import {stopPersistence} from "./dataStore.js";
+import {stopPersistence, stopReconciliationTimer} from "./dataStore.js";
 import {stopP2P} from "./p2p.js";
+
+const __dirname = import.meta.dirname || dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf-8'));
+console.log(`ovcs v${pkg.version}`);
 
 const args = process.argv.slice(2);
 
@@ -15,6 +21,7 @@ const args = process.argv.slice(2);
 function setupShutdownHandlers() {
     const shutdown = async () => {
         console.log('\nShutting down...');
+        stopReconciliationTimer();
         await stopPresence();
         await stopP2P();
         stopPersistence();

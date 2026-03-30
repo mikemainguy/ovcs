@@ -16,6 +16,7 @@ const OVCSSETTINGS = {
     PRESENCE_DB_PREFIX: 'ovcs-presence-',
     HEARTBEAT_INTERVAL: 30000,
     STALE_TIMEOUT: 120000,
+    RECONCILE_INTERVAL: 300000, // 5 minutes — safety net for missed chokidar events
     // Language mappings for AST parsing
     LANGUAGE_MAP: {
         '.js': 'javascript',

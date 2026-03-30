@@ -3,6 +3,8 @@ import { initEmbeddings, generateEmbedding, isModelLoaded } from './embeddings.j
 import { chunkCode, isSupportedFile, sha256 } from './chunker.js';
 import { parseFile, createSearchableText } from './astParser.js';
 import { debug } from './debug.js';
+import fs from 'node:fs';
+import * as path from 'node:path';
 
 let pwd = null;
 let syncQueue = [];
@@ -76,9 +78,15 @@ async function processFileSync(data, metadata) {
 
     await removeFileVectors(fileId);
 
+    // Read content from disk
     let content = '';
-    if (data.base64) {
-        content = Buffer.from(data.base64, 'base64').toString('utf-8');
+    try {
+        const resolvedPath = path.resolve(pwd || '.', filePath);
+        if (fs.existsSync(resolvedPath)) {
+            content = fs.readFileSync(resolvedPath, 'utf-8');
+        }
+    } catch (err) {
+        debug('Error reading file for vectorization:', filePath, err.message);
     }
 
     if (!content || content.length === 0) {
@@ -146,17 +154,15 @@ async function reindexAll(db) {
 
         if (doc.type === 'file' && doc.file && isSupportedFile(doc.file)) {
             try {
+                // Read content from disk
                 let content = '';
-                if (doc.base64) {
-                    content = Buffer.from(doc.base64, 'base64').toString('utf-8');
-                } else if (doc.revisions) {
-                    const revisionKeys = Object.keys(doc.revisions);
-                    if (revisionKeys.length > 0) {
-                        const latestRevision = doc.revisions[revisionKeys[0]];
-                        if (latestRevision.content) {
-                            content = Buffer.from(latestRevision.content, 'base64').toString('utf-8');
-                        }
+                try {
+                    const resolvedPath = path.resolve(pwd || '.', doc.file);
+                    if (fs.existsSync(resolvedPath)) {
+                        content = fs.readFileSync(resolvedPath, 'utf-8');
                     }
+                } catch (err) {
+                    debug('Error reading file for reindex:', doc.file, err.message);
                 }
 
                 if (content) {

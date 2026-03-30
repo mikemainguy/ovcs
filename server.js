@@ -12,14 +12,9 @@ function getStorage() {
 import { createRxServer } from "rxdb-server/plugins/server";
 import { RxServerAdapterExpress, HTTP_SERVER_BY_EXPRESS } from "rxdb-server/plugins/adapter-express";
 
-// Custom adapter that overrides the default 100KB body limit
+// Custom adapter — metadata-only payloads are small, default limits are fine
 const OvcsExpressAdapter = {
-    ...RxServerAdapterExpress,
-    async create() {
-        const app = express();
-        app.use(express.json({ limit: '50mb' }));
-        return app;
-    }
+    ...RxServerAdapterExpress
 };
 import fs from "node:fs";
 import os from "node:os";
@@ -29,7 +24,7 @@ import { OVCSSETTINGS } from "./const.js";
 
 const DATA_DIR = `./${OVCSSETTINGS.ROOT_DIR}/server-data`;
 
-// Schemas (same as client)
+// Schemas (same as client — metadata only, no content stored)
 const fileSchema = {
     version: 0,
     primaryKey: 'id',
@@ -39,9 +34,7 @@ const fileSchema = {
         file:      { type: 'string' },
         type:      { type: 'string' },
         hash:      { type: 'string' },
-        base64:    { type: 'string' },
         revisions: { type: 'object' },
-        compression: { type: 'string' },
         updatedAt: { type: 'number' }
     },
     required: ['id', 'file', 'type', 'hash']
@@ -61,7 +54,10 @@ const presenceSchema = {
         startedAt:   { type: 'string' },
         status:      { type: 'string' },
         activeFiles: { type: 'array', items: { type: 'string' } },
+        fileFilter:  { type: 'object' },
         teamId:      { type: 'string' },
+        gitBranch:   { type: 'string' },
+        gitCommitHash: { type: 'string' },
         updatedAt:   { type: 'number' }
     },
     required: ['id', 'email', 'status']
@@ -91,7 +87,6 @@ const ovcsConflictHandler = {
         }
         if ((incoming.updatedAt || 0) > (master.updatedAt || 0)) {
             merged.hash = incoming.hash;
-            merged.base64 = incoming.base64;
             merged.updatedAt = incoming.updatedAt;
         }
         return merged;
@@ -100,83 +95,150 @@ const ovcsConflictHandler = {
 
 const presenceConflictHandler = {
     isEqual(a, b) {
-        return a.lastSeen === b.lastSeen && a.status === b.status;
+        return a?.lastSeen === b?.lastSeen && a?.status === b?.status;
     },
     resolve(input) {
-        // Keep the most recently seen document
-        return new Date(input.newDocumentState.lastSeen || 0) >= new Date(input.assumedMasterState.lastSeen || 0)
-            ? input.newDocumentState
-            : input.assumedMasterState;
+        const master = input.assumedMasterState;
+        const incoming = input.newDocumentState;
+        if (!master) return incoming;
+        if (!incoming) return master;
+        return new Date(incoming.lastSeen || 0) >= new Date(master.lastSeen || 0)
+            ? incoming
+            : master;
     }
 };
 
-// Signaling server for WebRTC P2P
-const signalingPeers = new Map(); // teamId -> Map(nodeId -> ws)
+// Signaling server for WebRTC P2P — implements RxDB's simple-peer signaling protocol
+import { SIMPLE_PEER_PING_INTERVAL } from 'rxdb/plugins/replication-webrtc';
+
+const PEER_ID_LENGTH = 12;
+
+function randomToken(length) {
+    let result = '';
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
 
 function setupSignaling(httpServer) {
     const wss = new WebSocketServer({ server: httpServer, path: '/signaling' });
+    const peerById = new Map();
+    const peersByRoom = new Map();
+
+    function sendMsg(ws, msg) {
+        if (ws.readyState === 1) {
+            ws.send(JSON.stringify(msg));
+        }
+    }
+
+    function disconnectPeer(peerId, reason) {
+        console.log(`[Signaling] Disconnect peer ${peerId}: ${reason}`);
+        const peer = peerById.get(peerId);
+        if (peer) {
+            peer.rooms.forEach(roomId => {
+                const room = peersByRoom.get(roomId);
+                if (room) {
+                    room.delete(peerId);
+                    if (room.size === 0) peersByRoom.delete(roomId);
+                }
+            });
+            try { peer.socket.close(); } catch (e) {}
+        }
+        peerById.delete(peerId);
+    }
+
+    // Clean up stale peers that stopped pinging
+    const pingInterval = setInterval(() => {
+        const minTime = Date.now() - (SIMPLE_PEER_PING_INTERVAL || 120000);
+        for (const [peerId, peer] of peerById) {
+            if (peer.lastPing < minTime) {
+                disconnectPeer(peerId, 'no ping');
+            }
+        }
+    }, 5000);
+
+    wss.on('close', () => {
+        clearInterval(pingInterval);
+        peerById.clear();
+        peersByRoom.clear();
+    });
 
     wss.on('connection', (ws) => {
-        let peerTeamId = null;
-        let peerNodeId = null;
+        const peerId = randomToken(PEER_ID_LENGTH);
+        const peer = { id: peerId, socket: ws, rooms: new Set(), lastPing: Date.now() };
+        peerById.set(peerId, peer);
 
-        ws.on('message', (raw) => {
-            try {
-                const msg = JSON.parse(raw.toString());
+        // Send init with assigned peerId
+        sendMsg(ws, { type: 'init', yourPeerId: peerId });
+        console.log(`[Signaling] Peer connected: ${peerId}`);
 
-                if (msg.type === 'register') {
-                    peerTeamId = msg.teamId;
-                    peerNodeId = msg.nodeId;
-                    if (!signalingPeers.has(peerTeamId)) {
-                        signalingPeers.set(peerTeamId, new Map());
-                    }
-                    const team = signalingPeers.get(peerTeamId);
-                    team.set(peerNodeId, ws);
-
-                    // Notify existing peers about the new peer
-                    for (const [existingId, existingWs] of team) {
-                        if (existingId !== peerNodeId && existingWs.readyState === 1) {
-                            existingWs.send(JSON.stringify({ type: 'peer-joined', nodeId: peerNodeId }));
-                            // Also tell the new peer about existing peers
-                            ws.send(JSON.stringify({ type: 'peer-joined', nodeId: existingId }));
-                        }
-                    }
-                    console.log(`[Signaling] Peer registered: ${peerNodeId} (team: ${peerTeamId})`);
-                }
-                else if (msg.type === 'signal' && peerTeamId) {
-                    // Relay WebRTC signaling data (SDP/ICE) to target peer
-                    const team = signalingPeers.get(peerTeamId);
-                    const targetWs = team?.get(msg.target);
-                    if (targetWs && targetWs.readyState === 1) {
-                        targetWs.send(JSON.stringify({
-                            type: 'signal',
-                            from: peerNodeId,
-                            data: msg.data
-                        }));
-                    }
-                }
-            } catch (err) {
-                // Ignore malformed messages
-            }
+        ws.on('error', (err) => {
+            console.error(`[Signaling] Peer ${peerId} error:`, err.message);
+            disconnectPeer(peerId, 'socket error');
         });
 
         ws.on('close', () => {
-            if (peerTeamId && peerNodeId) {
-                const team = signalingPeers.get(peerTeamId);
-                if (team) {
-                    team.delete(peerNodeId);
-                    // Notify remaining peers
-                    for (const [id, existingWs] of team) {
-                        if (existingWs.readyState === 1) {
-                            existingWs.send(JSON.stringify({ type: 'peer-left', nodeId: peerNodeId }));
+            disconnectPeer(peerId, 'disconnected');
+        });
+
+        ws.on('message', (raw) => {
+            peer.lastPing = Date.now();
+            let msg;
+            try {
+                msg = JSON.parse(raw.toString());
+            } catch (e) {
+                return;
+            }
+
+            switch (msg.type) {
+                case 'join': {
+                    const roomId = msg.room;
+                    if (!roomId || roomId.length < 5) {
+                        disconnectPeer(peerId, 'invalid room id');
+                        return;
+                    }
+                    peer.rooms.add(roomId);
+                    if (!peersByRoom.has(roomId)) {
+                        peersByRoom.set(roomId, new Set());
+                    }
+                    const room = peersByRoom.get(roomId);
+                    room.add(peerId);
+
+                    console.log(`[Signaling] Peer ${peerId} joined room ${roomId} (${room.size} peers)`);
+
+                    // Tell all peers in the room about the current roster
+                    for (const otherPeerId of room) {
+                        const otherPeer = peerById.get(otherPeerId);
+                        if (otherPeer) {
+                            sendMsg(otherPeer.socket, {
+                                type: 'joined',
+                                otherPeerIds: Array.from(room)
+                            });
                         }
                     }
-                    if (team.size === 0) signalingPeers.delete(peerTeamId);
+                    break;
                 }
-                console.log(`[Signaling] Peer disconnected: ${peerNodeId}`);
+                case 'signal': {
+                    if (msg.senderPeerId !== peerId) {
+                        disconnectPeer(peerId, 'spoofed sender');
+                        return;
+                    }
+                    const receiver = peerById.get(msg.receiverPeerId);
+                    if (receiver) {
+                        sendMsg(receiver.socket, msg);
+                    }
+                    break;
+                }
+                case 'ping':
+                    break;
+                default:
+                    console.log(`[Signaling] Unknown message type from ${peerId}: ${msg.type}`);
             }
         });
     });
+
     console.log('WebSocket signaling server attached at /signaling');
 }
 
@@ -243,23 +305,13 @@ async function startServer(options = {}) {
 
     const app = rxServer.serverApp;
 
-    // Log requests and capture responses for debugging
+    // Log push results for debugging
     app.use((req, res, next) => {
-        const sizeKB = req.headers['content-length'] ? Math.round(parseInt(req.headers['content-length']) / 1024) : 0;
-        if (sizeKB > 10) {
-            console.log(`[${req.method}] ${req.path} - ${sizeKB}KB`);
-        }
-
-        // Intercept response to log push results
         if (req.path.includes('/push')) {
             const origJson = res.json.bind(res);
             res.json = (data) => {
                 if (Array.isArray(data) && data.length > 0) {
-                    console.log(`[PUSH RESPONSE] ${data.length} conflicts returned:`, JSON.stringify(data).substring(0, 500));
-                } else if (Array.isArray(data)) {
-                    console.log(`[PUSH RESPONSE] OK - 0 conflicts`);
-                } else {
-                    console.log(`[PUSH RESPONSE]`, JSON.stringify(data).substring(0, 500));
+                    console.log(`[PUSH RESPONSE] ${data.length} conflicts returned`);
                 }
                 return origJson(data);
             };

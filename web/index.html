@@ -2,9 +2,23 @@
 <head>
     <title>OVCS Dashboard</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #f5f5f5; color: #333; }
-        h2 { margin-top: 24px; margin-bottom: 8px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #f5f5f5; color: #333; }
+        nav { background: #1e293b; color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 24px; }
+        nav .brand { font-weight: 700; font-size: 1.1em; }
+        nav a { color: #94a3b8; text-decoration: none; font-size: 0.9em; padding: 4px 8px; border-radius: 4px; }
+        nav a:hover, nav a.active { color: #fff; background: #334155; }
+        .container { padding: 20px; max-width: 1000px; margin: 0 auto; }
+        h2 { margin-top: 24px; margin-bottom: 8px; font-size: 1.1em; }
         .section { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .mode-badge { display: inline-block; font-size: 0.75em; font-weight: 600; padding: 3px 8px; border-radius: 4px; color: #fff; margin-left: 8px; vertical-align: middle; }
+        .mode-p2p { background: #8b5cf6; }
+        .mode-server { background: #3b82f6; }
+        .mode-local { background: #6b7280; }
+        .config-grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px 16px; font-size: 0.9em; }
+        .config-label { color: #666; font-weight: 500; }
+        .config-value { font-family: monospace; word-break: break-all; }
+        .config-value.enabled { color: #16a34a; }
+        .config-value.disabled { color: #dc2626; }
         .node { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #eee; }
         .node:last-child { border-bottom: none; }
         .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
@@ -18,25 +32,79 @@
         .active-files code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; }
         .last-seen { font-size: 0.8em; color: #999; }
         .no-nodes { color: #999; font-style: italic; }
-        #info { font-family: monospace; font-size: 0.85em; word-break: break-all; }
+        .sync-state { font-family: monospace; font-size: 0.85em; }
+        .sync-state .synced { color: #16a34a; }
+        .sync-state .error { color: #dc2626; }
+        .sync-state .connecting { color: #f59e0b; }
+        .db-info { font-family: monospace; font-size: 0.85em; }
+        .help-text { font-size: 0.85em; color: #666; line-height: 1.5; }
+        .help-text code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
+        .help-text pre { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.9em; }
     </style>
 </head>
 <body>
-    <h1>OVCS Dashboard</h1>
+    <nav>
+        <span class="brand">OVCS</span>
+        <a href="/" class="active">Dashboard</a>
+        <a href="/diff.html">Diff Viewer</a>
+        <a href="/data">Data (JSON)</a>
+        <a href="/presence">Presence (JSON)</a>
+        <a href="/sync-status">Sync Status (JSON)</a>
+    </nav>
 
-    <div class="section">
-        <h2>Team</h2>
-        <div id="presence"><span class="no-nodes">Loading...</span></div>
-    </div>
+    <div class="container">
+        <h1 id="title">OVCS Dashboard</h1>
 
-    <div class="section">
-        <h2>Database Info</h2>
-        <div id="info"></div>
-    </div>
+        <div class="section">
+            <h2>Configuration</h2>
+            <div id="config" class="config-grid"><span class="no-nodes">Loading...</span></div>
+        </div>
 
-    <div class="section">
-        <h2>Sync Status</h2>
-        <div id="sync-status"></div>
+        <div class="section">
+            <h2>Team Members</h2>
+            <div id="presence"><span class="no-nodes">Loading...</span></div>
+        </div>
+
+        <div class="section">
+            <h2>Sync Status</h2>
+            <div id="sync-status" class="sync-state">Loading...</div>
+        </div>
+
+        <div class="section">
+            <h2>Database</h2>
+            <div id="info" class="db-info">Loading...</div>
+        </div>
+
+        <div class="section">
+            <h2>Quick Start</h2>
+            <div class="help-text">
+                <p>Configuration is stored in <code>.ovcs/ovcs.json</code> in the watched directory.</p>
+                <p><strong>Server mode:</strong></p>
+<pre>ovcs-server                   # start the server (default port 5984)
+ovcs-server --port 4000       # custom port</pre>
+                <p><strong>Client mode (server sync):</strong></p>
+<pre>ovcs                          # watch current directory
+ovcs --dir /path/to/project   # watch a specific directory
+ovcs --port 3002              # custom web dashboard port</pre>
+                <p><strong>Client mode (P2P):</strong></p>
+<pre>ovcs --p2p                    # peer-to-peer via WebRTC
+ovcs --p2p --dir /path        # P2P + custom directory</pre>
+                <p><strong>Minimal config for server sync:</strong></p>
+<pre>{
+  "email": "you@example.com",
+  "remote": "http://localhost:5984/ovcs",
+  "teamId": "my-team",
+  "sync": { "enabled": true }
+}</pre>
+                <p><strong>Minimal config for P2P:</strong></p>
+<pre>{
+  "email": "you@example.com",
+  "remote": "http://localhost:5984/ovcs",
+  "teamId": "my-team",
+  "p2p": { "signalingServer": "ws://localhost:5984/signaling" }
+}</pre>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -48,10 +116,29 @@
             return Math.floor(seconds / 3600) + 'h ago';
         }
 
+        function renderConfig(me) {
+            const el = document.getElementById('config');
+            const modeClass = 'mode-' + (me.mode || 'local');
+            const modeLabel = { p2p: 'P2P (WebRTC)', server: 'Server Sync', local: 'Local Only' }[me.mode] || me.mode;
+
+            document.getElementById('title').innerHTML = `OVCS Dashboard <span class="mode-badge ${modeClass}">${modeLabel}</span>`;
+
+            el.innerHTML = `
+                <span class="config-label">Email</span><span class="config-value">${me.email || 'not set'}</span>
+                <span class="config-label">Client ID</span><span class="config-value">${me.clientId || 'not set'}</span>
+                <span class="config-label">Team ID</span><span class="config-value">${me.teamId || 'not set'}</span>
+                <span class="config-label">Mode</span><span class="config-value">${modeLabel}</span>
+                <span class="config-label">Remote</span><span class="config-value">${me.remote || 'not configured'}</span>
+                <span class="config-label">Watch Dir</span><span class="config-value">${me.baseDirectory || '.'}</span>
+                <span class="config-label">Sync</span><span class="config-value ${me.sync?.enabled ? 'enabled' : 'disabled'}">${me.sync?.enabled ? 'enabled' : 'disabled'}</span>
+                <span class="config-label">Presence</span><span class="config-value ${me.presence?.enabled ? 'enabled' : 'disabled'}">${me.presence?.enabled ? 'enabled' : 'disabled'}</span>
+            `;
+        }
+
         function renderPresence(nodes) {
             const el = document.getElementById('presence');
             if (!nodes || nodes.length === 0) {
-                el.innerHTML = '<span class="no-nodes">No team members online. Enable sync and presence in .ovcs/ovcs.json.</span>';
+                el.innerHTML = '<span class="no-nodes">No team members online.</span>';
                 return;
             }
             el.innerHTML = nodes.map(n => `
@@ -72,35 +159,39 @@
             `).join('');
         }
 
+        function renderSyncStatus(data) {
+            const el = document.getElementById('sync-status');
+            const stateClass = data.state === 'synced' ? 'synced' : data.state === 'error' ? 'error' : 'connecting';
+            el.innerHTML = `
+                <span class="${stateClass}">${data.state || 'unknown'}</span>
+                ${data.lastSync ? ' &mdash; last sync: ' + new Date(data.lastSync).toLocaleString() : ''}
+                ${data.error ? '<br><span class="error">' + data.error + '</span>' : ''}
+            `;
+        }
+
+        // Fetch config once
+        fetch('/me').then(r => r.json()).then(renderConfig).catch(() => {});
+
         // Poll presence
         function fetchPresence() {
-            fetch('/presence')
-                .then(r => r.json())
-                .then(renderPresence)
-                .catch(() => {});
+            fetch('/presence').then(r => r.json()).then(renderPresence).catch(() => {});
         }
         fetchPresence();
         setInterval(fetchPresence, 5000);
 
         // Poll info
         setInterval(function() {
-            fetch('/info')
-                .then(r => r.json())
-                .then(data => {
-                    document.getElementById('info').innerText = JSON.stringify(data, null, 2);
-                })
-                .catch(() => {});
+            fetch('/info').then(r => r.json()).then(data => {
+                document.getElementById('info').innerText = `${data.doc_count} documents tracked (storage: ${data.storage})`;
+            }).catch(() => {});
         }, 2000);
 
         // Poll sync status
-        setInterval(function() {
-            fetch('/sync-status')
-                .then(r => r.json())
-                .then(data => {
-                    document.getElementById('sync-status').innerText = JSON.stringify(data, null, 2);
-                })
-                .catch(() => {});
-        }, 3000);
+        function fetchSync() {
+            fetch('/sync-status').then(r => r.json()).then(renderSyncStatus).catch(() => {});
+        }
+        fetchSync();
+        setInterval(fetchSync, 3000);
     </script>
 </body>
 </html>

@@ -3,7 +3,6 @@ import fs from "node:fs";
 import * as crypto from "node:crypto";
 import {initWeb, saveData} from "./dataStore.js";
 import {debug} from "./debug.js";
-import {compress} from "./compression.js";
 
 function sha256(data) {
     return crypto.createHash('sha256').update(data).digest('hex');
@@ -58,9 +57,7 @@ async function watchDir(metadata, pwd, port, options = {}) {
                         try {
                             const data = await fs.promises.readFile(path);
                             const hash = sha256(data);
-                            const { data: compressed, method } = await compress(data, metadata.compression);
-                            const base64 = compressed.toString('base64');
-                            await saveData({id: path, type: type, hash: hash, base64: base64, compression: method}, metadata);
+                            await saveData({id: path, type: type, hash: hash}, metadata);
                             if (initialScanDone) {
                                 console.log(`File ${event}: ${path}`);
                             }
@@ -71,7 +68,7 @@ async function watchDir(metadata, pwd, port, options = {}) {
                             }
                         }
                     } else {
-                        await saveData({id: path, type: type}, metadata);
+                        await saveData({id: path, type: type, hash: ''}, metadata);
                         debug('add', path);
                     }
                     break;
@@ -79,11 +76,11 @@ async function watchDir(metadata, pwd, port, options = {}) {
                     if (!initialScanDone) {
                         initialScanCount++;
                     }
-                    await saveData({id: path, type: type}, metadata);
+                    await saveData({id: path, type: type, hash: ''}, metadata);
                     debug('addDir', path);
                     break;
                 case 'unlink':
-                    await saveData({id: path, type: type}, metadata);
+                    await saveData({id: path, type: type, hash: ''}, metadata);
                     debug('unlink', path);
                     break;
                 default:

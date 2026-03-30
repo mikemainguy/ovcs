@@ -3,6 +3,8 @@ import { generateEmbedding, isModelLoaded } from './embeddings.js';
 import { reindexAll, isVectorSyncInitialized } from './vectorSync.js';
 import { sha256 } from './chunker.js';
 import { debug } from './debug.js';
+import fs from 'node:fs';
+import * as path from 'node:path';
 
 function setupSearchRoutes(app, db) {
     app.get('/search', async (req, res) => {
@@ -116,21 +118,21 @@ function setupSearchRoutes(app, db) {
                 return res.status(404).json({ error: 'File not found' });
             }
 
+            // Read content from disk
             let content = '';
-            if (targetDoc.doc.base64) {
-                content = Buffer.from(targetDoc.doc.base64, 'base64').toString('utf-8');
-            } else if (targetDoc.doc.revisions) {
-                const revisionKeys = Object.keys(targetDoc.doc.revisions);
-                if (revisionKeys.length > 0) {
-                    const latestRevision = targetDoc.doc.revisions[revisionKeys[0]];
-                    if (latestRevision.content) {
-                        content = Buffer.from(latestRevision.content, 'base64').toString('utf-8');
+            if (targetDoc.doc.file) {
+                try {
+                    const filePath = path.resolve('.', targetDoc.doc.file);
+                    if (fs.existsSync(filePath)) {
+                        content = fs.readFileSync(filePath, 'utf-8');
                     }
+                } catch (err) {
+                    debug('Error reading file for search:', targetDoc.doc.file, err.message);
                 }
             }
 
             if (!content) {
-                return res.status(400).json({ error: 'File has no content' });
+                return res.status(400).json({ error: 'File content not available on disk' });
             }
 
             const queryVector = await generateEmbedding(content.substring(0, 2000));

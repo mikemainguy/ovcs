@@ -4,144 +4,98 @@
     <title>OVCS - Diff Viewer</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/diff2html/bundles/css/diff2html.min.css">
     <style>
-        * {
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        h1 {
-            margin: 0 0 20px 0;
-            color: #333;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        .refresh-info {
-            color: #666;
-            font-size: 14px;
-        }
-        .no-conflicts {
-            background: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }
-        .conflict-card {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-            overflow: hidden;
-        }
-        .conflict-header {
-            background: #fff3cd;
-            border-bottom: 1px solid #ffc107;
-            padding: 15px 20px;
-        }
-        .conflict-header h2 {
-            margin: 0 0 10px 0;
-            font-size: 16px;
-            color: #856404;
-            word-break: break-all;
-        }
-        .revision-info {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            font-size: 13px;
-            color: #666;
-        }
-        .revision-item {
-            background: #f8f9fa;
-            padding: 8px 12px;
-            border-radius: 4px;
-        }
-        .revision-item strong {
-            color: #333;
-        }
-        .revision-item .timestamp {
-            color: #888;
-            font-size: 11px;
-            display: block;
-            margin-top: 4px;
-        }
-        .diff-container {
-            overflow-x: auto;
-        }
-        .d2h-wrapper {
-            font-size: 13px;
-        }
-        .view-toggle {
-            margin-bottom: 10px;
-            padding: 10px 20px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #eee;
-        }
-        .view-toggle button {
-            padding: 6px 12px;
-            margin-right: 8px;
-            border: 1px solid #ddd;
-            background: white;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-        .view-toggle button.active {
-            background: #007bff;
-            color: white;
-            border-color: #007bff;
-        }
-        .view-toggle button:hover:not(.active) {
-            background: #f0f0f0;
-        }
-        .missing-badge {
-            display: inline-block;
-            background: #dc3545;
-            color: white;
-            font-size: 12px;
-            font-weight: 600;
-            padding: 3px 8px;
-            border-radius: 4px;
-            margin-left: 10px;
-            vertical-align: middle;
-        }
-        .missing-header {
-            background: #f8d7da !important;
-            border-bottom-color: #f5c6cb !important;
-        }
-        .missing-header h2 {
-            color: #721c24 !important;
-        }
-        .error {
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 8px;
-        }
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f5f5f5; }
+        nav { background: #1e293b; color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 24px; }
+        nav .brand { font-weight: 700; font-size: 1.1em; }
+        nav a { color: #94a3b8; text-decoration: none; font-size: 0.9em; padding: 4px 8px; border-radius: 4px; }
+        nav a:hover, nav a.active { color: #fff; background: #334155; }
+        .container { padding: 20px; max-width: 1200px; margin: 0 auto; }
+        h1 { margin: 0 0 16px 0; color: #333; }
+
+        /* Summary bar */
+        .summary-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+        .summary-chip { padding: 8px 16px; border-radius: 8px; font-size: 0.9em; font-weight: 600; cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s; }
+        .summary-chip:hover { opacity: 0.85; }
+        .summary-chip.active { border-color: #333; }
+        .chip-all { background: #e2e8f0; color: #334155; }
+        .chip-conflict { background: #fff3cd; color: #856404; }
+        .chip-missing-local { background: #f8d7da; color: #721c24; }
+        .chip-missing-remote { background: #fff3e0; color: #e65100; }
+        .chip-count { font-size: 1.1em; margin-right: 4px; }
+
+        /* Pagination */
+        .pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 0; }
+        .pagination button { padding: 6px 14px; border: 1px solid #ddd; background: #fff; border-radius: 4px; cursor: pointer; font-size: 0.9em; }
+        .pagination button:disabled { opacity: 0.4; cursor: default; }
+        .pagination button:hover:not(:disabled) { background: #f0f0f0; }
+        .pagination .page-info { font-size: 0.9em; color: #666; }
+        .page-size { font-size: 0.85em; color: #666; }
+        .page-size select { margin-left: 4px; padding: 2px 4px; }
+
+        /* Cards */
+        .no-conflicts { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 20px; border-radius: 8px; text-align: center; }
+        .conflict-card { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; overflow: hidden; }
+        .conflict-header { background: #fff3cd; border-bottom: 1px solid #ffc107; padding: 15px 20px; cursor: pointer; }
+        .conflict-header h2 { margin: 0 0 10px 0; font-size: 16px; color: #856404; word-break: break-all; }
+        .revision-info { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; color: #666; }
+        .revision-item { background: #f8f9fa; padding: 8px 12px; border-radius: 4px; }
+        .revision-item strong { color: #333; }
+        .revision-item .timestamp { color: #888; font-size: 11px; display: block; margin-top: 4px; }
+        .diff-body { overflow-x: auto; }
+        .diff-body.collapsed { display: none; }
+        .d2h-wrapper { font-size: 13px; }
+        .view-toggle { padding: 10px 20px; background: #f8f9fa; border-bottom: 1px solid #eee; }
+        .view-toggle button { padding: 6px 12px; margin-right: 8px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .view-toggle button.active { background: #007bff; color: white; border-color: #007bff; }
+        .view-toggle button:hover:not(.active) { background: #f0f0f0; }
+        .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 4px; margin-left: 10px; vertical-align: middle; color: white; }
+        .badge-missing-local { background: #dc3545; }
+        .badge-missing-remote { background: #fd7e14; }
+        .badge-conflict { background: #ffc107; color: #856404; }
+        .badge-mergeable { background: #28a745; }
+        .mergeable-header { background: #d4edda !important; border-bottom-color: #c3e6cb !important; }
+        .mergeable-header h2 { color: #155724 !important; }
+        .chip-mergeable { background: #d4edda; color: #155724; }
+        .merge-btn { padding: 4px 12px; border: 1px solid #28a745; background: #28a745; color: white; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; margin-left: 8px; vertical-align: middle; }
+        .merge-btn:hover { background: #218838; }
+        .merge-btn:disabled { opacity: 0.5; cursor: default; }
+        .merge-btn.merging { background: #6c757d; border-color: #6c757d; }
+        .merge-btn.merged { background: #17a2b8; border-color: #17a2b8; cursor: default; }
+        .missing-local-header { background: #f8d7da !important; border-bottom-color: #f5c6cb !important; }
+        .missing-local-header h2 { color: #721c24 !important; }
+        .missing-remote-header { background: #fff3e0 !important; border-bottom-color: #fd7e14 !important; }
+        .missing-remote-header h2 { color: #e65100 !important; }
+        .expand-hint { font-size: 0.8em; color: #999; float: right; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 8px; }
+        .loading { text-align: center; padding: 40px; color: #666; }
+        .pull-btn { padding: 4px 12px; border: 1px solid #28a745; background: #28a745; color: white; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; margin-left: 8px; vertical-align: middle; }
+        .pull-btn:hover { background: #218838; }
+        .pull-btn:disabled { opacity: 0.5; cursor: default; }
+        .pull-btn.pulling { background: #6c757d; border-color: #6c757d; }
+        .pull-btn.pulled { background: #17a2b8; border-color: #17a2b8; cursor: default; }
+        .pull-all-btn { padding: 6px 14px; border: 1px solid #28a745; background: #28a745; color: white; border-radius: 6px; cursor: pointer; font-size: 0.85em; font-weight: 600; margin-left: 8px; }
+        .pull-all-btn:hover { background: #218838; }
+        .pull-all-btn:disabled { opacity: 0.5; cursor: default; }
+        .pull-status { font-size: 0.85em; color: #666; margin-left: 8px; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>OVCS Diff Viewer</h1>
-        <div class="refresh-info">Auto-refreshes every 5 seconds</div>
-    </div>
-    <div id="content">
-        <div class="loading">Loading conflicts...</div>
+    <nav>
+        <span class="brand">OVCS</span>
+        <a href="/">Dashboard</a>
+        <a href="/diff.html" class="active">Diff Viewer</a>
+        <a href="/data">Data (JSON)</a>
+        <a href="/presence">Presence (JSON)</a>
+        <a href="/sync-status">Sync Status (JSON)</a>
+    </nav>
+
+    <div class="container">
+        <h1>Diff Viewer</h1>
+        <div id="summary" class="summary-bar"></div>
+        <div id="pagination-top" class="pagination"></div>
+        <div id="content"><div class="loading">Loading...</div></div>
+        <div id="pagination-bottom" class="pagination"></div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/diff/dist/diff.min.js"></script>
@@ -150,185 +104,439 @@
         let currentView = 'side-by-side';
         let currentUserEmail = null;
         let currentClientId = null;
+        let currentFilter = null; // null = all
+        let currentPage = 1;
+        let pageSize = 20;
 
         function createUnifiedDiff(filename, oldText, newText, oldHeader, newHeader) {
-            const diff = Diff.createTwoFilesPatch(
-                'a/' + filename,
-                'b/' + filename,
-                oldText || '',
-                newText || '',
-                oldHeader,
-                newHeader
-            );
-            return diff;
+            return Diff.createTwoFilesPatch('a/' + filename, 'b/' + filename, oldText || '', newText || '', oldHeader, newHeader);
         }
 
-        function renderDiff(diffString, outputFormat) {
-            return Diff2Html.html(diffString, {
-                drawFileList: false,
-                matching: 'lines',
-                outputFormat: outputFormat,
-                renderNothingWhenEmpty: false
-            });
+        function renderDiffHtml(diffString, outputFormat) {
+            return Diff2Html.html(diffString, { drawFileList: false, matching: 'lines', outputFormat, renderNothingWhenEmpty: false });
         }
 
         function formatTimestamp(isoString) {
             if (!isoString) return 'Unknown';
-            const date = new Date(isoString);
-            return date.toLocaleString();
+            return new Date(isoString).toLocaleString();
         }
 
-        function renderConflicts(data) {
-            const content = document.getElementById('content');
+        function renderSummary(summary, total) {
+            const el = document.getElementById('summary');
+            const chips = [
+                { type: null, cls: 'chip-all', label: 'All', count: total },
+                { type: 'conflict', cls: 'chip-conflict', label: 'Conflicts', count: summary.conflicts },
+                { type: 'missingLocally', cls: 'chip-missing-local', label: 'Missing Locally', count: summary.missingLocally },
+                { type: 'missingRemotely', cls: 'chip-missing-remote', label: 'Missing Remotely', count: summary.missingRemotely }
+            ];
+            el.innerHTML = chips.map(c =>
+                `<div class="summary-chip ${c.cls} ${currentFilter === c.type ? 'active' : ''}" onclick="setFilter(${c.type === null ? 'null' : "'" + c.type + "'"})">
+                    <span class="chip-count">${c.count}</span> ${c.label}
+                </div>`
+            ).join('') +
+                (summary.missingLocally > 0 ? `<button class="pull-all-btn" id="pull-all-btn" onclick="pullAllMissing()">Pull All Missing (${summary.missingLocally})</button><span class="pull-status" id="pull-all-status"></span>` : '') +
+                `<div class="page-size">Per page:
+                    <select onchange="setPageSize(this.value)">
+                        ${[10,20,50,100].map(n => `<option value="${n}" ${n===pageSize?'selected':''}>${n}</option>`).join('')}
+                    </select>
+                </div>`;
+        }
 
-            if (!data || data.length === 0) {
-                content.innerHTML = '<div class="no-conflicts">No differences detected.</div>';
+        function renderPagination(page, pages, total, targetId) {
+            const el = document.getElementById(targetId);
+            if (pages <= 1) { el.innerHTML = ''; return; }
+            el.innerHTML = `
+                <button onclick="goPage(${page - 1})" ${page <= 1 ? 'disabled' : ''}>Previous</button>
+                <span class="page-info">Page ${page} of ${pages} (${total} items)</span>
+                <button onclick="goPage(${page + 1})" ${page >= pages ? 'disabled' : ''}>Next</button>
+            `;
+        }
+
+        function renderItems(items) {
+            const content = document.getElementById('content');
+            if (!items || items.length === 0) {
+                content.innerHTML = '<div class="no-conflicts">No differences in this view.</div>';
                 return;
             }
 
             let html = '';
-
-            data.forEach((item, index) => {
+            items.forEach((item, index) => {
                 const doc = item.doc;
                 const missingLocally = item.missingLocally;
+                const missingRemotely = item.missingRemotely;
+                const diffType = item.diffType;
                 const revisions = doc.revisions || {};
                 const revKeys = Object.keys(revisions);
 
-                // Helper: get display name for a revision key (email field or fall back to key)
-                function displayName(key) {
-                    return revisions[key]?.email || key;
-                }
+                function displayName(key) { return revisions[key]?.email || key; }
 
-                // Find local revision: match by clientId or email
                 const localKey = revKeys.find(k =>
-                    k === currentClientId ||
-                    revisions[k]?.email === currentUserEmail ||
-                    k === currentUserEmail
+                    k === currentClientId || revisions[k]?.email === currentUserEmail || k === currentUserEmail
                 );
                 const otherKeys = revKeys.filter(k => k !== localKey);
 
                 let leftLabel, rightLabel, leftContent, rightContent, leftTimestamp, rightTimestamp;
 
-                if (missingLocally) {
+                // Content is no longer in the DB — labels and timestamps come from metadata,
+                // actual content is fetched on-demand from /content/:fileId
+                if (missingRemotely) {
+                    const localRev = localKey ? revisions[localKey] : null;
+                    leftLabel = 'Remote (missing)';
+                    leftContent = '';
+                    leftTimestamp = null;
+                    rightLabel = 'Local';
+                    rightContent = ''; // fetched on expand
+                    rightTimestamp = localRev?.updated || null;
+                } else if (missingLocally) {
                     if (revKeys.length > 0) {
-                        const remoteKey = revKeys[0];
+                        const rk = revKeys[0];
                         leftLabel = 'Local (missing)';
                         leftContent = '';
                         leftTimestamp = null;
-                        rightLabel = displayName(remoteKey);
-                        rightContent = revisions[remoteKey].content || doc.content || '';
-                        rightTimestamp = revisions[remoteKey].updated;
+                        rightLabel = displayName(rk);
+                        rightContent = ''; // fetched on expand
+                        rightTimestamp = revisions[rk].updated;
                     } else {
-                        leftLabel = 'Local (missing)';
-                        leftContent = '';
-                        leftTimestamp = null;
-                        rightLabel = 'Remote';
-                        rightContent = doc.content || '';
-                        rightTimestamp = null;
+                        leftLabel = 'Local (missing)'; leftContent = ''; leftTimestamp = null;
+                        rightLabel = 'Remote'; rightContent = ''; rightTimestamp = null;
                     }
                 } else {
-                    const localRevision = localKey ? revisions[localKey] : null;
-
-                    if (localRevision && otherKeys.length > 0) {
-                        const otherKey = otherKeys[0];
-                        leftLabel = displayName(otherKey);
-                        leftContent = revisions[otherKey].content;
-                        leftTimestamp = revisions[otherKey].updated;
-                        rightLabel = 'Local';
-                        rightContent = localRevision.content;
-                        rightTimestamp = localRevision.updated;
-                    } else if (localRevision && otherKeys.length === 0) {
-                        leftLabel = 'Base';
-                        leftContent = doc.content || '';
-                        leftTimestamp = null;
-                        rightLabel = 'Local';
-                        rightContent = localRevision.content;
-                        rightTimestamp = localRevision.updated;
-                    } else if (!localRevision && revKeys.length >= 1) {
-                        const otherKey = revKeys[0];
-                        leftLabel = displayName(otherKey);
-                        leftContent = revisions[otherKey].content;
-                        leftTimestamp = revisions[otherKey].updated;
-                        rightLabel = 'Base';
-                        rightContent = doc.content || '';
-                        rightTimestamp = null;
+                    const localRev = localKey ? revisions[localKey] : null;
+                    if (localRev && otherKeys.length > 0) {
+                        const ok = otherKeys[0];
+                        leftLabel = displayName(ok); leftContent = ''; leftTimestamp = revisions[ok].updated;
+                        rightLabel = 'Local'; rightContent = ''; rightTimestamp = localRev.updated;
+                    } else if (localRev) {
+                        leftLabel = 'Base'; leftContent = ''; leftTimestamp = null;
+                        rightLabel = 'Local'; rightContent = ''; rightTimestamp = localRev.updated;
+                    } else if (revKeys.length >= 1) {
+                        const ok = revKeys[0];
+                        leftLabel = displayName(ok); leftContent = ''; leftTimestamp = revisions[ok].updated;
+                        rightLabel = 'Base'; rightContent = ''; rightTimestamp = null;
                     } else {
                         return;
                     }
                 }
 
-                const diffId = `diff-${index}`;
-                const unifiedDiff = createUnifiedDiff(
-                    doc.file,
-                    leftContent,
-                    rightContent,
-                    `${leftLabel}${leftTimestamp ? ' (' + formatTimestamp(leftTimestamp) + ')' : ''}`,
-                    `${rightLabel}${rightTimestamp ? ' (' + formatTimestamp(rightTimestamp) + ')' : ''}`
-                );
+                const headerClass = missingLocally ? 'missing-local-header' : missingRemotely ? 'missing-remote-header' : '';
+                const pullBtnHtml = missingLocally
+                    ? `<button class="pull-btn" id="pull-btn-${index}" onclick="event.stopPropagation(); pullFile('${item.id}', ${index})">Pull</button>`
+                    : '';
+                const badgeHtml = missingLocally ? '<span class="badge badge-missing-local">Missing locally</span>' + pullBtnHtml
+                    : missingRemotely ? '<span class="badge badge-missing-remote">Missing on remote peers</span>'
+                    : '<span class="badge badge-conflict">Conflict</span>';
 
-                const diffHtml = renderDiff(unifiedDiff, currentView === 'side-by-side' ? 'side-by-side' : 'line-by-line');
+                const diffId = `diff-${index}`;
 
                 html += `
                     <div class="conflict-card">
-                        <div class="conflict-header ${missingLocally ? 'missing-header' : ''}">
-                            <h2>${doc.file}${missingLocally ? '<span class="missing-badge">Missing locally</span>' : ''}</h2>
+                        <div class="conflict-header ${headerClass}" onclick="toggleDiff('${diffId}')">
+                            <h2>${doc.file} ${badgeHtml} <span class="expand-hint">click to expand</span></h2>
                             <div class="revision-info">
-                                <div class="revision-item">
-                                    <strong>Left:</strong> ${leftLabel}
-                                    ${leftTimestamp ? `<span class="timestamp">${formatTimestamp(leftTimestamp)}</span>` : ''}
-                                </div>
-                                <div class="revision-item">
-                                    <strong>Right:</strong> ${rightLabel}
-                                    ${rightTimestamp ? `<span class="timestamp">${formatTimestamp(rightTimestamp)}</span>` : ''}
-                                </div>
-                                ${otherKeys.length > 1 ? `<div class="revision-item"><strong>+${otherKeys.length - 1} more revision(s)</strong></div>` : ''}
+                                <div class="revision-item"><strong>Left:</strong> ${leftLabel} ${leftTimestamp ? `<span class="timestamp">${formatTimestamp(leftTimestamp)}</span>` : ''}</div>
+                                <div class="revision-item"><strong>Right:</strong> ${rightLabel} ${rightTimestamp ? `<span class="timestamp">${formatTimestamp(rightTimestamp)}</span>` : ''}</div>
+                                ${otherKeys.length > 1 ? `<div class="revision-item"><strong>+${otherKeys.length - 1} more</strong></div>` : ''}
                             </div>
                         </div>
-                        <div class="view-toggle">
-                            <button class="${currentView === 'side-by-side' ? 'active' : ''}" onclick="setView('side-by-side')">Side by Side</button>
-                            <button class="${currentView === 'line-by-line' ? 'active' : ''}" onclick="setView('line-by-line')">Line by Line</button>
-                        </div>
-                        <div class="diff-container" id="${diffId}">
-                            ${diffHtml}
-                        </div>
+                        <div class="diff-body collapsed" id="${diffId}"
+                             data-file-id="${item.id}"
+                             data-filename="${doc.file}"
+                             data-left-label="${leftLabel}"
+                             data-right-label="${rightLabel}"
+                             data-left-header="${leftLabel}${leftTimestamp ? ' (' + formatTimestamp(leftTimestamp) + ')' : ''}"
+                             data-right-header="${rightLabel}${rightTimestamp ? ' (' + formatTimestamp(rightTimestamp) + ')' : ''}"
+                             data-diff-type="${diffType}"
+                             data-missing-locally="${missingLocally}"
+                             data-missing-remotely="${missingRemotely}"
+                        ></div>
                     </div>
                 `;
             });
 
-            if (html === '') {
-                content.innerHTML = '<div class="no-conflicts">No differences detected.</div>';
-            } else {
-                content.innerHTML = html;
+            content.innerHTML = html || '<div class="no-conflicts">No differences in this view.</div>';
+        }
+
+        // Cache for fetched content
+        const diffContentCache = {};
+
+        async function toggleDiff(diffId) {
+            const el = document.getElementById(diffId);
+            if (!el.classList.contains('collapsed')) {
+                el.classList.add('collapsed');
+                return;
+            }
+
+            // Already rendered — just show
+            if (el.dataset.rendered === 'true') {
+                el.classList.remove('collapsed');
+                return;
+            }
+
+            const filename = el.dataset.filename;
+            const fileId = el.dataset.fileId;
+            const leftHeader = el.dataset.leftHeader;
+            const rightHeader = el.dataset.rightHeader;
+            const diffType = el.dataset.diffType;
+
+            // Check if we have content cached
+            if (diffContentCache[diffId]) {
+                renderDiffInElement(el, diffId, filename, diffContentCache[diffId].left, diffContentCache[diffId].right, leftHeader, rightHeader);
+                el.classList.remove('collapsed');
+                return;
+            }
+
+            el.innerHTML = '<div style="padding: 20px; color: #666; text-align: center;">Loading content...</div>';
+            el.classList.remove('collapsed');
+
+            try {
+                // For conflicts, use merge-check to get both sides + mergeability
+                if (diffType === 'conflict') {
+                    const mergeResp = await fetch(`/merge-check/${fileId}`);
+                    if (mergeResp.ok) {
+                        const mergeData = await mergeResp.json();
+
+                        // Update badge based on mergeability
+                        const card = el.closest('.conflict-card');
+                        const header = card?.querySelector('.conflict-header');
+                        if (mergeData.mergeable && header) {
+                            header.classList.add('mergeable-header');
+                            const badge = header.querySelector('.badge');
+                            if (badge) {
+                                badge.className = 'badge badge-mergeable';
+                                badge.textContent = 'Mergeable (' + mergeData.strategy + ')';
+                            }
+                            if (!header.querySelector('.merge-btn')) {
+                                const btn = document.createElement('button');
+                                btn.className = 'merge-btn';
+                                btn.textContent = 'Merge';
+                                btn.onclick = function(e) { e.stopPropagation(); mergeFile(fileId, btn); };
+                                header.querySelector('.badge')?.after(btn);
+                            }
+                        }
+
+                        // Use local and remote content from merge-check for the diff
+                        const left = mergeData.remoteContent || '';
+                        const right = mergeData.localContent || '';
+                        diffContentCache[diffId] = { left, right };
+                        renderDiffInElement(el, diffId, filename, left, right, leftHeader, rightHeader);
+                        return;
+                    }
+                }
+
+                // For missing files, fetch content from /content endpoint
+                const resp = await fetch(`/content/${fileId}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const isMissingLocally = el.dataset.missingLocally === 'true';
+
+                    let left = '', right = '';
+                    if (isMissingLocally) {
+                        // We don't have it, remote does
+                        left = '';
+                        right = data.content || '';
+                    } else {
+                        // We have it, remote doesn't
+                        left = data.content || '';
+                        right = '';
+                    }
+
+                    diffContentCache[diffId] = { left, right };
+                    renderDiffInElement(el, diffId, filename, left, right, leftHeader, rightHeader);
+                } else {
+                    el.innerHTML = '<div style="padding: 20px; color: #999; text-align: center;">Content not available.</div>';
+                }
+            } catch (err) {
+                el.innerHTML = `<div style="padding: 20px; color: #dc3545;">Error loading content: ${err.message}</div>`;
             }
         }
 
-        function setView(view) {
-            currentView = view;
+        async function mergeFile(fileId, btn) {
+            if (!btn) return;
+            btn.disabled = true;
+            btn.textContent = 'Merging...';
+            btn.classList.add('merging');
+
+            try {
+                const resp = await fetch(`/merge/${fileId}`, { method: 'POST' });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    btn.textContent = 'Merged';
+                    btn.classList.remove('merging');
+                    btn.classList.add('merged');
+                    console.log(`Merged ${data.file} (${data.bytesWritten} bytes, strategy: ${data.strategy})`);
+                    setTimeout(fetchAndRender, 1000);
+                } else {
+                    const err = await resp.json();
+                    btn.textContent = 'Failed';
+                    btn.classList.remove('merging');
+                    btn.title = err.error || 'Merge failed';
+                    setTimeout(() => { btn.textContent = 'Retry'; btn.disabled = false; }, 3000);
+                }
+            } catch (err) {
+                btn.textContent = 'Error';
+                btn.classList.remove('merging');
+                btn.title = err.message;
+                setTimeout(() => { btn.textContent = 'Retry'; btn.disabled = false; }, 3000);
+            }
+        }
+
+        function renderDiffInElement(el, diffId, filename, leftContent, rightContent, leftHeader, rightHeader) {
+            const unifiedDiff = createUnifiedDiff(filename, leftContent, rightContent, leftHeader, rightHeader);
+            const diffHtml = renderDiffHtml(unifiedDiff, currentView === 'side-by-side' ? 'side-by-side' : 'line-by-line');
+            el.innerHTML = `
+                <div class="view-toggle">
+                    <button class="${currentView === 'side-by-side' ? 'active' : ''}" onclick="event.stopPropagation(); reRenderDiff('${diffId}', 'side-by-side')">Side by Side</button>
+                    <button class="${currentView === 'line-by-line' ? 'active' : ''}" onclick="event.stopPropagation(); reRenderDiff('${diffId}', 'line-by-line')">Line by Line</button>
+                </div>
+                <div class="diff-content">${diffHtml}</div>
+            `;
+            el.dataset.rendered = 'true';
+            el.dataset.left = leftContent;
+            el.dataset.right = rightContent;
+        }
+
+        function reRenderDiff(diffId, view) {
+            const el = document.getElementById(diffId);
+            const unifiedDiff = createUnifiedDiff(el.dataset.filename, el.dataset.left, el.dataset.right, el.dataset.leftHeader, el.dataset.rightHeader);
+            const diffHtml = renderDiffHtml(unifiedDiff, view === 'side-by-side' ? 'side-by-side' : 'line-by-line');
+            el.querySelector('.diff-content').innerHTML = diffHtml;
+            el.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+            el.querySelector(`.view-toggle button:${view === 'side-by-side' ? 'first-child' : 'last-child'}`).classList.add('active');
+        }
+
+        function setFilter(type) {
+            currentFilter = type;
+            currentPage = 1;
             fetchAndRender();
         }
 
-        async function fetchAndRender() {
+        function goPage(p) {
+            currentPage = p;
+            fetchAndRender();
+        }
+
+        function setPageSize(size) {
+            pageSize = parseInt(size);
+            currentPage = 1;
+            fetchAndRender();
+        }
+
+        // Track current data for smart updates
+        let lastItemIds = [];
+
+        async function fetchAndRender(fullRender = true) {
             try {
-                const response = await fetch('/diff');
-                if (!response.ok) {
-                    throw new Error(`HTTP error: ${response.status}`);
-                }
+                let url = `/diff?page=${currentPage}&limit=${pageSize}`;
+                if (currentFilter) url += `&type=${currentFilter}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
                 const data = await response.json();
-                renderConflicts(data);
+
+                // Always update summary and pagination
+                renderSummary(data.summary, data.total);
+                renderPagination(data.page, data.pages, data.total, 'pagination-top');
+                renderPagination(data.page, data.pages, data.total, 'pagination-bottom');
+
+                // Only re-render cards if explicitly requested or data changed
+                const newIds = (data.items || []).map(i => {
+                    const revHashes = Object.values(i.doc?.revisions || {}).map(r => r.hash || '').join('|');
+                    return i.id + ':' + i.diffType + ':' + revHashes;
+                }).join(',');
+                if (fullRender || newIds !== lastItemIds.join(',')) {
+                    // Preserve expanded state
+                    const expandedIds = new Set();
+                    document.querySelectorAll('.diff-body:not(.collapsed)').forEach(el => {
+                        expandedIds.add(el.dataset.fileId);
+                    });
+
+                    renderItems(data.items);
+                    lastItemIds = (data.items || []).map(i => {
+                        const revHashes = Object.values(i.doc?.revisions || {}).map(r => r.hash || '').join('|');
+                        return i.id + ':' + i.diffType + ':' + revHashes;
+                    });
+
+                    // Re-expand previously expanded cards with fresh content
+                    if (expandedIds.size > 0) {
+                        document.querySelectorAll('.diff-body').forEach(el => {
+                            if (expandedIds.has(el.dataset.fileId)) {
+                                // Clear caches so toggleDiff re-fetches
+                                delete diffContentCache[el.id];
+                                el.dataset.rendered = '';
+                                toggleDiff(el.id);
+                            }
+                        });
+                    }
+                }
             } catch (error) {
-                document.getElementById('content').innerHTML =
-                    `<div class="error">Error loading diff data: ${error.message}</div>`;
+                document.getElementById('content').innerHTML = `<div class="error">Error loading diff data: ${error.message}</div>`;
             }
         }
 
-        // Initialize: fetch current user then start rendering
+        async function pullFile(fileId, index) {
+            const btn = document.getElementById(`pull-btn-${index}`);
+            if (!btn) return;
+            btn.disabled = true;
+            btn.textContent = 'Pulling...';
+            btn.classList.add('pulling');
+
+            try {
+                const resp = await fetch(`/pull/${fileId}`, { method: 'POST' });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    btn.textContent = 'Pulled';
+                    btn.classList.remove('pulling');
+                    btn.classList.add('pulled');
+                    console.log(`Pulled ${data.file} (${data.bytesWritten} bytes from ${data.source})`);
+                    // Refresh after a short delay to update the diff list
+                    setTimeout(fetchAndRender, 1000);
+                } else {
+                    const err = await resp.json();
+                    btn.textContent = 'Failed';
+                    btn.classList.remove('pulling');
+                    btn.title = err.error || 'Pull failed';
+                    setTimeout(() => { btn.textContent = 'Retry'; btn.disabled = false; }, 3000);
+                }
+            } catch (err) {
+                btn.textContent = 'Error';
+                btn.classList.remove('pulling');
+                btn.title = err.message;
+                setTimeout(() => { btn.textContent = 'Retry'; btn.disabled = false; }, 3000);
+            }
+        }
+
+        async function pullAllMissing() {
+            const btn = document.getElementById('pull-all-btn');
+            const status = document.getElementById('pull-all-status');
+            if (!btn) return;
+            btn.disabled = true;
+            btn.textContent = 'Pulling...';
+
+            try {
+                const resp = await fetch('/pull-missing', { method: 'POST' });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    btn.textContent = `Done (${data.pulled.length} pulled)`;
+                    if (status) status.textContent = data.failed.length > 0 ? `${data.failed.length} failed` : '';
+                    setTimeout(fetchAndRender, 1000);
+                } else {
+                    const err = await resp.json();
+                    btn.textContent = 'Failed';
+                    if (status) status.textContent = err.error;
+                    setTimeout(() => { btn.textContent = 'Pull All Missing'; btn.disabled = false; }, 3000);
+                }
+            } catch (err) {
+                btn.textContent = 'Error';
+                if (status) status.textContent = err.message;
+                setTimeout(() => { btn.textContent = 'Pull All Missing'; btn.disabled = false; }, 3000);
+            }
+        }
+
         async function init() {
             try {
-                const meResponse = await fetch('/me');
-                const meData = await meResponse.json();
-                currentUserEmail = meData.email;
-                currentClientId = meData.clientId;
-                console.log('Current user:', currentUserEmail, 'clientId:', currentClientId);
+                const meResp = await fetch('/me');
+                const me = await meResp.json();
+                currentUserEmail = me.email;
+                currentClientId = me.clientId;
             } catch (err) {
                 console.warn('Could not fetch current user:', err);
             }
@@ -337,8 +545,21 @@
 
         init();
 
-        // Auto-refresh every 5 seconds
-        setInterval(fetchAndRender, 5000);
+        // SSE: push-based updates instead of polling
+        const evtSource = new EventSource('/diff-events');
+        let updatePending = false;
+        evtSource.onmessage = (event) => {
+            if (!updatePending) {
+                updatePending = true;
+                setTimeout(() => {
+                    fetchAndRender(false);
+                    updatePending = false;
+                }, 500);
+            }
+        };
+        evtSource.onerror = () => {
+            console.warn('SSE connection lost, will auto-reconnect');
+        };
     </script>
 </body>
 </html>

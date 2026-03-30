@@ -6,11 +6,14 @@ function getStorage() {
     return wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
 }
 import crypto from "node:crypto";
+import { execSync } from "node:child_process";
 import os from "node:os";
 import fs from "node:fs";
+import * as path from "node:path";
 import {debug} from "./debug.js";
 import {OVCSSETTINGS} from "./const.js";
 import { replicateServer } from 'rxdb-server/plugins/replication-server';
+import { createBloomFilter } from './bloomfilter.js';
 
 let presenceDb = null;
 let presenceCollection = null;
@@ -18,6 +21,8 @@ let presenceSyncHandler = null;
 let heartbeatTimer = null;
 let nodeId = null;
 let metadata = null;
+let filesCollectionRef = null;
+let baseDirectoryRef = '.';
 
 const presenceSchema = {
     version: 0,
@@ -33,7 +38,10 @@ const presenceSchema = {
         startedAt:   { type: 'string' },
         status:      { type: 'string' },
         activeFiles: { type: 'array', items: { type: 'string' } },
+        fileFilter:  { type: 'object' },
         teamId:      { type: 'string' },
+        gitBranch:   { type: 'string' },
+        gitCommitHash: { type: 'string' },
         updatedAt:   { type: 'number' }
     },
     required: ['id', 'email', 'status']
@@ -41,12 +49,16 @@ const presenceSchema = {
 
 const presenceConflictHandler = {
     isEqual(a, b) {
-        return a.lastSeen === b.lastSeen && a.status === b.status;
+        return a?.lastSeen === b?.lastSeen && a?.status === b?.status;
     },
     resolve(input) {
-        return new Date(input.newDocumentState.lastSeen || 0) >= new Date(input.assumedMasterState.lastSeen || 0)
-            ? input.newDocumentState
-            : input.assumedMasterState;
+        const master = input.assumedMasterState;
+        const incoming = input.newDocumentState;
+        if (!master) return incoming;
+        if (!incoming) return master;
+        return new Date(incoming.lastSeen || 0) >= new Date(master.lastSeen || 0)
+            ? incoming
+            : master;
     }
 };
 
@@ -54,8 +66,10 @@ function generateNodeId(clientId) {
     return 'node-' + crypto.createHash('sha256').update(clientId).digest('hex').substring(0, 16);
 }
 
-async function initPresence(meta, pwd) {
+async function initPresence(meta, pwd, options = {}) {
     metadata = meta;
+    filesCollectionRef = options.filesCollection || null;
+    baseDirectoryRef = options.baseDirectory || pwd;
 
     if (!metadata.presence?.enabled) {
         debug('Presence disabled');
@@ -153,14 +167,42 @@ async function heartbeat() {
     if (!presenceCollection || !nodeId) return;
 
     try {
+        // Build Bloom filter of local file IDs
+        let fileFilter = null;
+        if (filesCollectionRef) {
+            const fileDocs = await filesCollectionRef.find().exec();
+            const localFileIds = fileDocs
+                .filter(d => {
+                    const j = d.toJSON();
+                    if (!j.file || j.type !== 'file') return false;
+                    const filePath = path.resolve(baseDirectoryRef, j.file);
+                    return fs.existsSync(filePath);
+                })
+                .map(d => d.id);
+            if (localFileIds.length > 0) {
+                fileFilter = createBloomFilter(localFileIds);
+            }
+        }
+
         const doc = await presenceCollection.findOne(nodeId).exec();
         if (doc) {
-            await doc.patch({
+            const patch = {
                 lastSeen: new Date().toISOString(),
                 status: 'active',
                 updatedAt: Date.now()
-            });
-            debug('Heartbeat sent');
+            };
+            if (fileFilter) patch.fileFilter = fileFilter;
+            // Add git info if available
+            if (metadata.git?.inRepo) {
+                try {
+                    patch.gitBranch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: baseDirectoryRef, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+                    patch.gitCommitHash = execSync('git rev-parse HEAD', { cwd: baseDirectoryRef, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+                } catch (e) {
+                    // git not available, skip
+                }
+            }
+            await doc.patch(patch);
+            debug(`Heartbeat sent (filter: ${fileFilter?.itemCount || 0} files)`);
         }
     } catch (err) {
         debug('Heartbeat error:', err);
@@ -258,7 +300,8 @@ async function getActiveNodes() {
                     nodeType: d.nodeType,
                     lastSeen: d.lastSeen,
                     startedAt: d.startedAt,
-                    activeFiles: d.activeFiles || []
+                    activeFiles: d.activeFiles || [],
+                    fileFilter: d.fileFilter || null
                 };
             });
     } catch (err) {
@@ -284,4 +327,8 @@ async function updateActiveFiles(files) {
     }
 }
 
-export {initPresence, stopPresence, getActiveNodes, updateActiveFiles};
+function getPresenceCollection() {
+    return presenceCollection;
+}
+
+export {initPresence, stopPresence, getActiveNodes, updateActiveFiles, getPresenceCollection};

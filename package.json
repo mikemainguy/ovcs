@@ -33,6 +33,7 @@
     "express": "^4.21.1",
     "lokijs": "^1.5.12",
     "node-datachannel": "^0.32.1",
+    "node-diff3": "^3.2.0",
     "rxdb": "^16.21.1",
     "rxdb-server": "^16.21.1",
     "tree-sitter": "^0.20.4",
