@@ -40,6 +40,22 @@
         .help-text { font-size: 0.85em; color: #666; line-height: 1.5; }
         .help-text code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
         .help-text pre { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.9em; }
+        .nav-search { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+        .nav-search input { padding: 4px 8px; border: 1px solid #475569; border-radius: 4px; background: #334155; color: #fff; font-size: 0.85em; width: 200px; }
+        .nav-search input::placeholder { color: #94a3b8; }
+        .nav-search select { padding: 4px; border: 1px solid #475569; border-radius: 4px; background: #334155; color: #fff; font-size: 0.85em; }
+        .nav-search button { padding: 4px 10px; border: 1px solid #475569; border-radius: 4px; background: #475569; color: #fff; font-size: 0.85em; cursor: pointer; }
+        .nav-search button:hover { background: #64748b; }
+        .search-results-panel { background: #fff; border-bottom: 2px solid #1e293b; max-height: 400px; overflow-y: auto; }
+        .search-results-panel .sr-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: #f8f9fa; border-bottom: 1px solid #eee; }
+        .search-results-panel .sr-header h3 { margin: 0; font-size: 0.95em; }
+        .search-results-panel .sr-close { cursor: pointer; background: none; border: none; font-size: 1.2em; color: #666; }
+        .search-result-item { padding: 10px 20px; border-bottom: 1px solid #f0f0f0; font-size: 0.85em; }
+        .search-result-item:hover { background: #f8f9fa; }
+        .search-result-item .sr-file { font-weight: 600; color: #1e293b; }
+        .search-result-item .sr-meta { color: #666; font-size: 0.8em; margin-top: 2px; }
+        .search-result-item .sr-content { font-family: monospace; background: #f5f5f5; padding: 6px 8px; border-radius: 4px; margin-top: 4px; white-space: pre-wrap; font-size: 0.85em; max-height: 100px; overflow-y: auto; }
+        .search-result-item .sr-score { float: right; color: #999; font-size: 0.8em; }
     </style>
 </head>
 <body>
@@ -50,7 +66,13 @@
         <a href="/data">Data (JSON)</a>
         <a href="/presence">Presence (JSON)</a>
         <a href="/sync-status">Sync Status (JSON)</a>
+        <div class="nav-search">
+            <input type="text" id="nav-search-input" placeholder="Search code..." onkeydown="if(event.key==='Enter')navSearch()">
+            <select id="nav-search-type"><option value="code">Code</option><option value="ast">AST</option></select>
+            <button onclick="navSearch()">Search</button>
+        </div>
     </nav>
+    <div id="search-results" class="search-results-panel" style="display:none"></div>
 
     <div class="container">
         <h1 id="title">OVCS Dashboard</h1>
@@ -192,6 +214,52 @@ ovcs --p2p --dir /path        # P2P + custom directory</pre>
         }
         fetchSync();
         setInterval(fetchSync, 3000);
+
+        async function navSearch() {
+            const q = document.getElementById('nav-search-input').value.trim();
+            if (!q) return;
+            const type = document.getElementById('nav-search-type').value;
+            const panel = document.getElementById('search-results');
+            panel.style.display = 'block';
+            panel.innerHTML = '<div class="sr-header"><h3>Searching...</h3></div>';
+
+            try {
+                const resp = await fetch(`/search?q=${encodeURIComponent(q)}&type=${type}&limit=20`);
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    panel.innerHTML = `<div class="sr-header"><h3>Error: ${err.error}</h3><button class="sr-close" onclick="closeSearch()">&#x2715;</button></div>`;
+                    return;
+                }
+                const data = await resp.json();
+
+                let html = `<div class="sr-header"><h3>${data.count} results for "${data.query}" (${data.type})</h3><button class="sr-close" onclick="closeSearch()">&#x2715;</button></div>`;
+                if (data.results.length === 0) {
+                    html += '<div class="search-result-item">No results found.</div>';
+                } else {
+                    data.results.forEach(r => {
+                        const score = r.score !== null ? `<span class="sr-score">${(r.score * 100).toFixed(1)}%</span>` : '';
+                        const meta = r.node_name
+                            ? `${r.node_type}: ${r.node_name} ${r.signature || ''} (${r.language}, lines ${r.start_line}-${r.end_line})`
+                            : `${r.language || 'unknown'}, lines ${r.start_line}-${r.end_line}`;
+                        const content = r.content ? `<div class="sr-content">${escapeHtml(r.content.substring(0, 500))}</div>` : '';
+                        html += `<div class="search-result-item">${score}<div class="sr-file">${r.file_path}</div><div class="sr-meta">${meta}</div>${content}</div>`;
+                    });
+                }
+                panel.innerHTML = html;
+            } catch (err) {
+                panel.innerHTML = `<div class="sr-header"><h3>Error: ${err.message}</h3><button class="sr-close" onclick="closeSearch()">&#x2715;</button></div>`;
+            }
+        }
+
+        function closeSearch() {
+            document.getElementById('search-results').style.display = 'none';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
     </script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 import {watch} from "chokidar";
 import fs from "node:fs";
 import * as crypto from "node:crypto";
-import {initWeb, saveData} from "./dataStore.js";
+import {initWeb, saveData, setScanStatus, startReplication} from "./dataStore.js";
 import {debug} from "./debug.js";
 
 function sha256(data) {
@@ -31,9 +31,12 @@ async function watchDir(metadata, pwd, port, options = {}) {
     let initialScanCount = 0;
     let initialScanDone = false;
 
-    watcher.on('ready', () => {
+    watcher.on('ready', async () => {
         initialScanDone = true;
+        setScanStatus(true, initialScanCount);
         console.log(`Initial scan complete: ${initialScanCount} files found`);
+        // Start replication now that local DB is fully populated
+        await startReplication(options);
     });
 
     watcher.on('all', async (event, path) => {
@@ -52,6 +55,7 @@ async function watchDir(metadata, pwd, port, options = {}) {
                 case 'change':
                     if (!initialScanDone) {
                         initialScanCount++;
+                        setScanStatus(false, initialScanCount);
                     }
                     if (type === 'file') {
                         try {
