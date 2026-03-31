@@ -18,11 +18,53 @@ const OvcsExpressAdapter = {
 };
 import fs from "node:fs";
 import os from "node:os";
+import https from "node:https";
 import crypto from "node:crypto";
 import { WebSocketServer } from "ws";
+import selfsigned from "selfsigned";
 import { OVCSSETTINGS } from "./const.js";
 
 const DATA_DIR = `./${OVCSSETTINGS.ROOT_DIR}/server-data`;
+const TLS_DIR = `./${OVCSSETTINGS.ROOT_DIR}/tls`;
+
+// --- TLS helpers ---
+
+async function loadOrGenerateCert() {
+    const certPath = `${TLS_DIR}/cert.pem`;
+    const keyPath = `${TLS_DIR}/key.pem`;
+
+    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+        return {
+            cert: fs.readFileSync(certPath, 'utf-8'),
+            key: fs.readFileSync(keyPath, 'utf-8')
+        };
+    }
+
+    console.log('[TLS] Generating self-signed certificate...');
+    const attrs = [{ name: 'commonName', value: 'ovcs-server' }];
+    const pems = await selfsigned.generate(attrs, {
+        days: 365,
+        keySize: 2048,
+        algorithm: 'sha256'
+    });
+
+    fs.mkdirSync(TLS_DIR, { recursive: true });
+    fs.writeFileSync(certPath, pems.cert);
+    fs.writeFileSync(keyPath, pems.private);
+    console.log(`[TLS] Certificate saved to ${TLS_DIR}/`);
+
+    return { cert: pems.cert, key: pems.private };
+}
+
+async function getTlsOptions(options) {
+    if (options.cert && options.key) {
+        return {
+            cert: fs.readFileSync(options.cert, 'utf-8'),
+            key: fs.readFileSync(options.key, 'utf-8')
+        };
+    }
+    return await loadOrGenerateCert();
+}
 
 // Schemas (same as client — metadata only, no content stored)
 const fileSchema = {
@@ -252,6 +294,7 @@ process.on('unhandledRejection', (err) => {
 async function startServer(options = {}) {
     const port = options.port || OVCSSETTINGS.OVCS_SYNC_PORT;
     const host = options.host || process.env.OVCS_SYNC_HOST || '0.0.0.0';
+    const tls = options.tls !== false; // TLS on by default
 
     // Ensure data directory exists
     if (!fs.existsSync(DATA_DIR)) {
@@ -294,10 +337,26 @@ async function startServer(options = {}) {
         console.log('No persisted data found, starting fresh');
     }
 
+    // Build adapter — override listen to use HTTPS when TLS is enabled
+    const adapter = tls
+        ? {
+            ...OvcsExpressAdapter,
+            async listen(serverApp, listenPort, hostname) {
+                const tlsOpts = await getTlsOptions(options);
+                const httpsServer = https.createServer(tlsOpts, serverApp);
+                await new Promise((resolve, reject) => {
+                    httpsServer.listen(listenPort, hostname, () => resolve());
+                    httpsServer.on('error', reject);
+                });
+                HTTP_SERVER_BY_EXPRESS.set(serverApp, httpsServer);
+            }
+        }
+        : OvcsExpressAdapter;
+
     // Create RxDB Server with Express adapter
     const rxServer = await createRxServer({
         database: db,
-        adapter: OvcsExpressAdapter,
+        adapter,
         port: port,
         host: host,
         cors: '*'
@@ -420,20 +479,23 @@ async function startServer(options = {}) {
     }
 
     const displayHost = host === '0.0.0.0' ? 'localhost' : host;
+    const httpProto = tls ? 'https' : 'http';
+    const wsProto = tls ? 'wss' : 'ws';
     console.log('');
     console.log('╔════════════════════════════════════════════════════════════╗');
     console.log('║                    OVCS Server Started                     ║');
     console.log('╠════════════════════════════════════════════════════════════╣');
     console.log(`║  Listening on:  ${host}:${port}`.padEnd(61) + '║');
-    console.log(`║  Server URL:    http://${displayHost}:${port}/`.padEnd(61) + '║');
+    console.log(`║  Server URL:    ${httpProto}://${displayHost}:${port}/`.padEnd(61) + '║');
+    console.log(`║  TLS:           ${tls ? 'enabled' : 'disabled'}`.padEnd(61) + '║');
     console.log(`║  Data directory: ${DATA_DIR}`.padEnd(61) + '║');
-    console.log(`║  Health check:  http://${displayHost}:${port}/ovcs/status`.padEnd(61) + '║');
-    console.log(`║  Presence:      http://${displayHost}:${port}/ovcs/presence`.padEnd(61) + '║');
-    console.log(`║  Signaling:     ws://${displayHost}:${port}/signaling`.padEnd(61) + '║');
+    console.log(`║  Health check:  ${httpProto}://${displayHost}:${port}/ovcs/status`.padEnd(61) + '║');
+    console.log(`║  Presence:      ${httpProto}://${displayHost}:${port}/ovcs/presence`.padEnd(61) + '║');
+    console.log(`║  Signaling:     ${wsProto}://${displayHost}:${port}/signaling`.padEnd(61) + '║');
     console.log('╠════════════════════════════════════════════════════════════╣');
     console.log('║  Replication Endpoints:                                    ║');
-    console.log(`║    Files:    http://${displayHost}:${port}/replication/files`.padEnd(61) + '║');
-    console.log(`║    Presence: http://${displayHost}:${port}/replication/presence`.padEnd(61) + '║');
+    console.log(`║    Files:    ${httpProto}://${displayHost}:${port}/replication/files`.padEnd(61) + '║');
+    console.log(`║    Presence: ${httpProto}://${displayHost}:${port}/replication/presence`.padEnd(61) + '║');
     console.log('╠════════════════════════════════════════════════════════════╣');
     console.log('║  Press Ctrl+C to stop the server                           ║');
     console.log('╚════════════════════════════════════════════════════════════╝');

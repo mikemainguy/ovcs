@@ -39,6 +39,11 @@ let syncStatus = { state: 'disconnected', lastSync: null, error: null };
 let watchBaseDirectory = '.';
 let storedMetadata = null;
 let reconcileTimer = null;
+let scanStatus = { ready: false, fileCount: 0 };
+
+function setScanStatus(ready, fileCount) {
+    scanStatus = { ready, fileCount };
+}
 
 function getSyncStatus() {
     return syncStatus;
@@ -411,18 +416,15 @@ async function initWeb(metadata, pwd, port, options = {}) {
     // 2. Start periodic persistence
     startPersistence();
 
-    // 3. Initialize vector sync
+    // 3. Initialize vector sync (use baseDirectory so file paths resolve correctly)
     try {
-        await initVectorSync(pwd);
+        await initVectorSync(watchBaseDirectory);
         debug('Vector sync initialized for web');
     } catch (err) {
         debug('Error initializing vector sync:', err);
     }
 
-    // 4. Reconcile DB against filesystem BEFORE replication starts
-    await reconcileFilesystem(metadata, watchBaseDirectory);
-
-    // 5. Initialize presence
+    // 4. Initialize presence
     if (metadata.presence?.enabled && metadata.teamId) {
         try {
             await initPresence(metadata, pwd, { filesCollection, baseDirectory: watchBaseDirectory });
@@ -432,9 +434,23 @@ async function initWeb(metadata, pwd, port, options = {}) {
         }
     }
 
-    // 6. Start replication — DB now has accurate local state
+    // 5. Start web server (replication deferred until after chokidar scan)
+    console.log('Calling web()...');
+    web(port, metadata, options);
+    console.log('initWeb complete');
+}
+
+// Start replication — called AFTER chokidar initial scan completes
+async function startReplication(options = {}) {
+    const metadata = storedMetadata;
+    if (!metadata) return;
+
+    // Reconcile DB against filesystem now that scan is done
+    await reconcileFilesystem(metadata, watchBaseDirectory);
+
+    // Start P2P or server replication
     if (options.p2p && metadata.teamId) {
-        const signalingUrl = metadata.p2p?.signalingServer || metadata.remote?.replace(/^http/, 'ws').replace(/\/[^/]*$/, '/signaling');
+        const signalingUrl = metadata.p2p?.signalingServer || metadata.remote?.replace(/^https/, 'wss').replace(/^http/, 'ws').replace(/\/[^/]*$/, '/signaling');
         if (signalingUrl) {
             try {
                 await initP2P({
@@ -461,13 +477,9 @@ async function initWeb(metadata, pwd, port, options = {}) {
         }
     }
 
-    // 7. Start periodic reconciliation timer (safety net)
+    // Start periodic reconciliation timer (safety net)
     startReconciliationTimer(metadata, watchBaseDirectory);
-
-    // 8. Start web server
-    console.log('Calling web()...');
-    web(port, metadata, options);
-    console.log('initWeb complete');
+    console.log('Replication started');
 }
 
 function web(port, metadata = {}, options = {}) {
@@ -587,6 +599,9 @@ function web(port, metadata = {}, options = {}) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         const file = fs.readFileSync(__dirname + '/web/diff.html');
         res.send(file.toString('utf-8'));
+    });
+    app.get("/ready", (req, res) => {
+        res.json(scanStatus);
     });
     app.get("/sync-status", (req, res) => {
         res.json(getSyncStatus());
@@ -988,4 +1003,4 @@ async function resolveConflicts() {
     debug('Conflict resolution is handled by RxDB conflictHandler');
 }
 
-export {saveData, initWeb, initRemoteSync, stopRemoteSync, initDB, getSyncStatus, resolveConflicts, stopPersistence, stopReconciliationTimer, onRemoteDocChange, filesCollection};
+export {saveData, initWeb, startReplication, initRemoteSync, stopRemoteSync, initDB, getSyncStatus, resolveConflicts, stopPersistence, stopReconciliationTimer, onRemoteDocChange, setScanStatus, filesCollection};

@@ -4,7 +4,7 @@ import {existsSync, readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {dirname, join} from "node:path";
 import {watchDir} from "./watchdir.js";
-import {setupMetadata} from "./setupMetadata.js";
+import {setupMetadata, configureTls} from "./setupMetadata.js";
 import {OVCSSETTINGS} from "./const.js";
 import {startServer} from "./server.js";
 import {stopPresence} from "./presence.js";
@@ -54,9 +54,16 @@ if (isServerMode) {
     // Server mode: start express-pouchdb replication hub
     const port = getPort(OVCSSETTINGS.OVCS_SYNC_PORT);
     const host = getArg('--host', undefined);
-    startServer({ port, host });
+    const tls = !args.includes('--no-tls');
+    const cert = getArg('--cert', undefined);
+    const key = getArg('--key', undefined);
+    startServer({ port, host, tls, cert, key });
 } else {
     // Client mode: watch directory and sync
+    if (args.includes('--allow-self-signed')) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+        console.warn('[WARNING] TLS certificate verification is disabled (--allow-self-signed). This makes connections vulnerable to man-in-the-middle attacks. Consider using tls.caCert to trust a specific certificate instead.');
+    }
     const rl = readline.createInterface({input: process.stdin, output: process.stdout});
     const pwd = process.cwd();
     const port = getPort(OVCSSETTINGS.OVCS_WEB_PORT);
@@ -70,6 +77,7 @@ if (isServerMode) {
                 if (ans === 'y') {
                     rl.close();
                     const metadata = setupMetadata(true, pwd);
+                    configureTls(metadata);
                     console.log(metadata);
                     const baseDir = getArg('--dir', metadata.baseDirectory || '.');
                     await watchDir(metadata, pwd, port, { p2p: isP2PMode, baseDirectory: baseDir });
@@ -81,6 +89,7 @@ if (isServerMode) {
             });
         } else {
             const metadata = setupMetadata(false, pwd);
+            configureTls(metadata);
             const baseDir = getArg('--dir', metadata.baseDirectory || '.');
             await watchDir(metadata, pwd, port, { p2p: isP2PMode, baseDirectory: baseDir });
         }

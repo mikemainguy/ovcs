@@ -33,6 +33,10 @@ const defaultMetadata = {
     'p2p': {
         'enabled': false,
         'signalingServer': ''
+    },
+    'tls': {
+        'rejectUnauthorized': true,
+        'caCert': ''
     }
 }
 function detectGitInfo(pwd) {
@@ -68,4 +72,25 @@ function setupMetadata(override, pwd) {
     return metadata;
 }
 
-export {setupMetadata};
+function configureTls(metadata) {
+    const tlsConfig = metadata.tls;
+    if (!tlsConfig) return;
+
+    if (tlsConfig.caCert) {
+        // NODE_EXTRA_CA_CERTS must be set before the first TLS connection
+        process.env.NODE_EXTRA_CA_CERTS = tlsConfig.caCert;
+        debug(`TLS: trusting CA cert from ${tlsConfig.caCert}`);
+    }
+
+    if (tlsConfig.rejectUnauthorized === false) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+        const remote = metadata.remote || '';
+        const signaling = metadata.p2p?.signalingServer || '';
+        if (remote.startsWith('https://') || signaling.startsWith('wss://')) {
+            console.warn('[WARNING] TLS certificate verification is disabled (rejectUnauthorized=false). This makes connections vulnerable to man-in-the-middle attacks. Consider using tls.caCert to trust a specific certificate instead.');
+        }
+        debug('TLS: certificate verification disabled (rejectUnauthorized=false)');
+    }
+}
+
+export {setupMetadata, configureTls};
