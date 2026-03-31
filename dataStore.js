@@ -1,10 +1,12 @@
-console.log('=== dataStore.js loading ===');
+debug('=== dataStore.js loading ===');
 import { addRxPlugin, createRxDatabase } from 'rxdb';
-import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 
-addRxPlugin(RxDBDevModePlugin);
+if (process.env.DEBUG_OVCS) {
+    const { RxDBDevModePlugin } = await import('rxdb/plugins/dev-mode');
+    addRxPlugin(RxDBDevModePlugin);
+}
 
 function getStorage() {
     return wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
@@ -147,7 +149,7 @@ async function initDB() {
         await loadPersistedData();
 
         const docs = await filesCollection.find().exec();
-        console.log(`Database initialized: localdb (${docs.length} docs)`);
+        debug(`Database initialized: localdb (${docs.length} docs)`);
         return db;
     })();
 
@@ -248,7 +250,7 @@ async function reconcileFilesystem(metadata, baseDirectory) {
         });
         updated++;
     }
-    console.log(`Reconciliation: ${updated} updated, ${unchanged} unchanged (${docs.length} total)`);
+    debug(`Reconciliation: ${updated} updated, ${unchanged} unchanged (${docs.length} total)`);
 }
 
 // Handle incoming remote doc changes — add local revision showing current disk state
@@ -435,9 +437,9 @@ async function initWeb(metadata, pwd, port, options = {}) {
     }
 
     // 5. Start web server (replication deferred until after chokidar scan)
-    console.log('Calling web()...');
+    debug('Calling web()...');
     web(port, metadata, options);
-    console.log('initWeb complete');
+    debug('initWeb complete');
 }
 
 // Start replication — called AFTER chokidar initial scan completes
@@ -459,6 +461,7 @@ async function startReplication(options = {}) {
                     signalingServerUrl: signalingUrl,
                     teamId: metadata.teamId,
                     baseDirectory: watchBaseDirectory,
+                    iceServers: metadata.p2p?.iceServers || [],
                     metadata
                 });
                 debug('P2P replication initialized');
@@ -479,12 +482,12 @@ async function startReplication(options = {}) {
 
     // Start periodic reconciliation timer (safety net)
     startReconciliationTimer(metadata, watchBaseDirectory);
-    console.log('Replication started');
+    debug('Replication started');
 }
 
 function web(port, metadata = {}, options = {}) {
     const baseDirectory = path.resolve(options.baseDirectory || metadata.baseDirectory || '.');
-    console.log('web() starting...');
+    debug('web() starting...');
     const app = express();
 
     app.get("/me", (req, res) => {
@@ -776,7 +779,7 @@ function web(port, metadata = {}, options = {}) {
                 fs.mkdirSync(dir, { recursive: true });
             }
             fs.writeFileSync(filePath, result.mergedContent);
-            console.log(`[Merge] Wrote merged ${d.file} (${result.mergedContent.length} bytes, strategy: ${result.strategy})`);
+            debug(`[Merge] Wrote merged ${d.file} (${result.mergedContent.length} bytes, strategy: ${result.strategy})`);
 
             res.json({
                 success: true,
@@ -793,7 +796,7 @@ function web(port, metadata = {}, options = {}) {
     // Pull a single file from peer and write to local disk
     app.post("/pull/:fileId", async (req, res) => {
         const { fileId } = req.params;
-        console.log(`[Pull] Pulling file ${fileId}`);
+        debug(`[Pull] Pulling file ${fileId}`);
         try {
             const result = await getFileContent(fileId);
             if (!result) {
@@ -806,7 +809,7 @@ function web(port, metadata = {}, options = {}) {
                 fs.mkdirSync(dir, { recursive: true });
             }
             fs.writeFileSync(filePath, result.content);
-            console.log(`[Pull] Wrote ${result.file} (${result.content.length} bytes, source: ${result.source})`);
+            debug(`[Pull] Wrote ${result.file} (${result.content.length} bytes, source: ${result.source})`);
 
             res.json({
                 fileId,
@@ -822,7 +825,7 @@ function web(port, metadata = {}, options = {}) {
 
     // Pull all files missing locally
     app.post("/pull-missing", async (req, res) => {
-        console.log(`[Pull] Pulling all missing files`);
+        debug(`[Pull] Pulling all missing files`);
         try {
             const docs = await filesCollection.find().exec();
             const localClientId = metadata.clientId || metadata.email;
@@ -845,7 +848,7 @@ function web(port, metadata = {}, options = {}) {
                         }
                         fs.writeFileSync(filePath, result.content);
                         pulled.push({ file: d.file, source: result.source, bytes: result.content.length });
-                        console.log(`[Pull] Wrote ${d.file} (${result.content.length} bytes)`);
+                        debug(`[Pull] Wrote ${d.file} (${result.content.length} bytes)`);
                     } else {
                         failed.push({ file: d.file, reason: 'Content not available' });
                     }
@@ -854,7 +857,7 @@ function web(port, metadata = {}, options = {}) {
                 }
             }
 
-            console.log(`[Pull] Done: ${pulled.length} pulled, ${failed.length} failed`);
+            debug(`[Pull] Done: ${pulled.length} pulled, ${failed.length} failed`);
             res.json({ total: pulled.length + failed.length, pulled, failed });
         } catch (err) {
             console.error(`[Pull] Error:`, err.message);
@@ -906,7 +909,7 @@ async function initRemoteSync(metadata, retryCount = 0) {
     const RETRY_DELAY = Math.pow(2, retryCount) * 1000;
 
     if (!metadata.remote || !metadata.sync?.enabled) {
-        console.log('Remote sync disabled or no remote configured');
+        debug('Remote sync disabled or no remote configured');
         return;
     }
 
@@ -920,17 +923,17 @@ async function initRemoteSync(metadata, retryCount = 0) {
     // Derive server base URL from metadata.remote
     // metadata.remote is like "http://localhost:5984/ovcs" — use the base URL
     const serverUrl = metadata.remote.replace(/\/[^/]*$/, '');
-    console.log(`Connecting to remote: ${serverUrl}`);
+    debug(`Connecting to remote: ${serverUrl}`);
 
     try {
         // Test connection
         const response = await fetch(`${serverUrl}/ovcs/status`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const status = await response.json();
-        console.log(`Remote server connected: ${status.status}`);
+        debug(`Remote server connected: ${status.status}`);
     } catch (err) {
         if (retryCount < MAX_RETRIES) {
-            console.log(`Connection failed, retrying in ${RETRY_DELAY/1000}s... (${retryCount + 1}/${MAX_RETRIES})`);
+            debug(`Connection failed, retrying in ${RETRY_DELAY/1000}s... (${retryCount + 1}/${MAX_RETRIES})`);
             syncStatus.state = 'connecting';
             syncStatus.error = `Retry ${retryCount + 1}/${MAX_RETRIES}: ${err.message}`;
             setTimeout(() => initRemoteSync(metadata, retryCount + 1), RETRY_DELAY);
@@ -944,7 +947,7 @@ async function initRemoteSync(metadata, retryCount = 0) {
 
     // Start RxDB server replication for files
     const replicationUrl = `${serverUrl}/replication/files/0`;
-    console.log(`Replication URL: ${replicationUrl}`);
+    debug(`Replication URL: ${replicationUrl}`);
     try {
         syncHandler = replicateServer({
             collection: filesCollection,
@@ -969,19 +972,19 @@ async function initRemoteSync(metadata, retryCount = 0) {
         syncHandler.active$.subscribe(active => {
             if (active) {
                 syncStatus.state = 'syncing';
-                console.log('Sync active');
+                debug('Sync active');
             } else {
                 syncStatus.state = 'synced';
                 syncStatus.lastSync = new Date().toISOString();
                 syncStatus.error = null;
-                console.log('Sync paused (up to date)');
+                debug('Sync paused (up to date)');
             }
         });
 
         // Listen for incoming remote docs and add local revision
         filesCollection.$.subscribe(changeEvent => onRemoteDocChange(changeEvent));
 
-        console.log('RxDB server replication started');
+        debug('RxDB server replication started');
     } catch (err) {
         console.error('Error starting replication:', err);
         syncStatus.state = 'error';

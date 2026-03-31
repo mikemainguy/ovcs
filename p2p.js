@@ -34,11 +34,11 @@ try {
         RTCSessionDescription: PatchedRTCSessionDescription,
         RTCIceCandidate: ndc.RTCIceCandidate
     };
-    console.log('[P2P] node-datachannel polyfill loaded');
+    debug('[P2P] node-datachannel polyfill loaded');
 } catch (e) {
     try {
         wrtc = (await import('wrtc')).default;
-        console.log('[P2P] wrtc loaded');
+        debug('[P2P] wrtc loaded');
     } catch (e2) {
         console.warn('[P2P] No WebRTC implementation found. P2P will not work in Node.js.');
     }
@@ -147,7 +147,7 @@ function handleContentResponse(msg) {
         const assembled = pending.chunks.join('');
         pendingContentRequests.delete(id);
         pending.resolve(assembled);
-        console.log(`[P2P] Content received: ${Math.round(assembled.length / 1024)}KB in ${total} chunks`);
+        debug(`[P2P] Content received: ${Math.round(assembled.length / 1024)}KB in ${total} chunks`);
     }
 }
 
@@ -162,13 +162,13 @@ async function fetchContentFromPeer(fileId) {
                 setTimeout(() => {
                     if (pendingContentRequests.has(requestId)) {
                         pendingContentRequests.delete(requestId);
-                        console.log(`[P2P] Content request ${requestId} timed out`);
+                        debug(`[P2P] Content request ${requestId} timed out`);
                         reject(new Error('Content request timeout'));
                     }
                 }, 30000);
             });
 
-            console.log(`[P2P] Requesting content for ${fileId} from peer ${peerId}`);
+            debug(`[P2P] Requesting content for ${fileId} from peer ${peerId}`);
             sendContentMessage(peer, { type: 'req', id: requestId, fileId });
 
             const result = await promise;
@@ -184,7 +184,7 @@ async function fetchContentFromPeer(fileId) {
 // --- P2P Replication Setup ---
 
 async function initP2P(options) {
-    const { filesCollection, presenceCollection, signalingServerUrl, teamId, baseDirectory } = options;
+    const { filesCollection, presenceCollection, signalingServerUrl, teamId, baseDirectory, iceServers } = options;
     localFilesCollection = filesCollection;
     localBaseDirectory = baseDirectory || '.';
 
@@ -192,14 +192,19 @@ async function initP2P(options) {
     if (!signalingServerUrl) throw new Error('signalingServerUrl is required');
     if (!teamId) throw new Error('teamId is required');
 
-    console.log(`[P2P] Starting replication (team: ${teamId}, signaling: ${signalingServerUrl})`);
+    const peerConfig = (iceServers && iceServers.length > 0)
+        ? { config: { iceServers } }
+        : {};
+
+    debug(`[P2P] Starting replication (team: ${teamId}, signaling: ${signalingServerUrl})`);
 
     try {
         // Create a custom connection handler that intercepts content messages
         const baseCreator = getConnectionHandlerSimplePeer({
             signalingServerUrl,
             wrtc,
-            webSocketConstructor: WebSocket
+            webSocketConstructor: WebSocket,
+            ...peerConfig
         });
 
         const wrappedCreator = async (opts) => {
@@ -213,7 +218,7 @@ async function initP2P(options) {
             originalConnect$.subscribe(peer => {
                 const peerId = peer.id || 'unknown';
                 connectedPeers.set(peerId, peer);
-                console.log(`[P2P] Peer ${peerId} data channel connected — hooking content handler`);
+                debug(`[P2P] Peer ${peerId} data channel connected — hooking content handler`);
 
                 // Hook into the raw data event to intercept content messages
                 // simple-peer emits 'data' for all incoming messages
@@ -263,7 +268,7 @@ async function initP2P(options) {
         p2pReplicationState.peerStates$.subscribe(peerStates => {
             const currentCount = peerStates.size;
             if (currentCount !== previousPeerCount) {
-                console.log(`[P2P] Peer count changed: ${previousPeerCount} -> ${currentCount}`);
+                debug(`[P2P] Peer count changed: ${previousPeerCount} -> ${currentCount}`);
                 previousPeerCount = currentCount;
             }
         });
@@ -271,7 +276,7 @@ async function initP2P(options) {
         // Listen for incoming remote docs and add local revision
         filesCollection.$.subscribe(changeEvent => onRemoteDocChange(changeEvent));
 
-        console.log('[P2P] Files replication started');
+        debug('[P2P] Files replication started');
 
         // Replicate presence if provided
         if (presenceCollection) {
@@ -281,7 +286,8 @@ async function initP2P(options) {
                 connectionHandlerCreator: getConnectionHandlerSimplePeer({
                     signalingServerUrl,
                     wrtc,
-                    webSocketConstructor: WebSocket
+                    webSocketConstructor: WebSocket,
+                    ...peerConfig
                 }),
                 pull: {},
                 push: {}
@@ -291,7 +297,7 @@ async function initP2P(options) {
                 console.error('[P2P] Presence replication error:', err.message || err);
             });
 
-            console.log('[P2P] Presence replication started');
+            debug('[P2P] Presence replication started');
         }
     } catch (err) {
         console.error('[P2P] Error starting replication:', err);
@@ -306,12 +312,12 @@ async function stopP2P() {
     if (p2pReplicationState) {
         await p2pReplicationState.cancel();
         p2pReplicationState = null;
-        console.log('[P2P] Files replication stopped');
+        debug('[P2P] Files replication stopped');
     }
     if (p2pPresenceReplicationState) {
         await p2pPresenceReplicationState.cancel();
         p2pPresenceReplicationState = null;
-        console.log('[P2P] Presence replication stopped');
+        debug('[P2P] Presence replication stopped');
     }
 }
 

@@ -5,6 +5,7 @@ import {fileURLToPath} from "node:url";
 import {dirname, join} from "node:path";
 import {watchDir} from "./watchdir.js";
 import {setupMetadata, configureTls} from "./setupMetadata.js";
+import {debug} from "./debug.js";
 import {OVCSSETTINGS} from "./const.js";
 import {startServer} from "./server.js";
 import {stopPresence} from "./presence.js";
@@ -20,7 +21,7 @@ const args = process.argv.slice(2);
 // Graceful shutdown — mark presence as offline
 function setupShutdownHandlers() {
     const shutdown = async () => {
-        console.log('\nShutting down...');
+        debug('\nShutting down...');
         stopReconciliationTimer();
         await stopPresence();
         await stopP2P();
@@ -70,15 +71,15 @@ if (isServerMode) {
 
     async function checkInit() {
         const exists = existsSync(`${pwd}/${OVCSSETTINGS.ROOT_DIR}`);
-        console.log(exists);
+        debug(exists);
         if (!exists) {
-            console.log('.ovcs directory not found, initialize?');
+            debug('.ovcs directory not found, initialize?');
             rl.question('Press [Y] to continue: ', async ans => {
                 if (ans === 'y') {
                     rl.close();
                     const metadata = setupMetadata(true, pwd);
                     configureTls(metadata);
-                    console.log(metadata);
+                    debug(metadata);
                     const baseDir = getArg('--dir', metadata.baseDirectory || '.');
                     await watchDir(metadata, pwd, port, { p2p: isP2PMode, baseDirectory: baseDir });
                 } else {

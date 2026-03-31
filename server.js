@@ -1,10 +1,12 @@
 import express from "express";
 import { addRxPlugin, createRxDatabase } from "rxdb";
-import { RxDBDevModePlugin } from "rxdb/plugins/dev-mode";
 import { wrappedValidateAjvStorage } from "rxdb/plugins/validate-ajv";
 import { getRxStorageMemory } from "rxdb/plugins/storage-memory";
 
-addRxPlugin(RxDBDevModePlugin);
+if (process.env.DEBUG_OVCS) {
+    const { RxDBDevModePlugin } = await import("rxdb/plugins/dev-mode");
+    addRxPlugin(RxDBDevModePlugin);
+}
 
 function getStorage() {
     return wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
@@ -23,6 +25,7 @@ import crypto from "node:crypto";
 import { WebSocketServer } from "ws";
 import selfsigned from "selfsigned";
 import { OVCSSETTINGS } from "./const.js";
+import { debug } from "./debug.js";
 
 const DATA_DIR = `./${OVCSSETTINGS.ROOT_DIR}/server-data`;
 const TLS_DIR = `./${OVCSSETTINGS.ROOT_DIR}/tls`;
@@ -40,7 +43,7 @@ async function loadOrGenerateCert() {
         };
     }
 
-    console.log('[TLS] Generating self-signed certificate...');
+    debug('[TLS] Generating self-signed certificate...');
     const attrs = [{ name: 'commonName', value: 'ovcs-server' }];
     const pems = await selfsigned.generate(attrs, {
         days: 365,
@@ -51,7 +54,7 @@ async function loadOrGenerateCert() {
     fs.mkdirSync(TLS_DIR, { recursive: true });
     fs.writeFileSync(certPath, pems.cert);
     fs.writeFileSync(keyPath, pems.private);
-    console.log(`[TLS] Certificate saved to ${TLS_DIR}/`);
+    debug(`[TLS] Certificate saved to ${TLS_DIR}/`);
 
     return { cert: pems.cert, key: pems.private };
 }
@@ -176,7 +179,7 @@ function setupSignaling(httpServer) {
     }
 
     function disconnectPeer(peerId, reason) {
-        console.log(`[Signaling] Disconnect peer ${peerId}: ${reason}`);
+        debug(`[Signaling] Disconnect peer ${peerId}: ${reason}`);
         const peer = peerById.get(peerId);
         if (peer) {
             peer.rooms.forEach(roomId => {
@@ -214,7 +217,7 @@ function setupSignaling(httpServer) {
 
         // Send init with assigned peerId
         sendMsg(ws, { type: 'init', yourPeerId: peerId });
-        console.log(`[Signaling] Peer connected: ${peerId}`);
+        debug(`[Signaling] Peer connected: ${peerId}`);
 
         ws.on('error', (err) => {
             console.error(`[Signaling] Peer ${peerId} error:`, err.message);
@@ -248,7 +251,7 @@ function setupSignaling(httpServer) {
                     const room = peersByRoom.get(roomId);
                     room.add(peerId);
 
-                    console.log(`[Signaling] Peer ${peerId} joined room ${roomId} (${room.size} peers)`);
+                    debug(`[Signaling] Peer ${peerId} joined room ${roomId} (${room.size} peers)`);
 
                     // Tell all peers in the room about the current roster
                     for (const otherPeerId of room) {
@@ -276,12 +279,12 @@ function setupSignaling(httpServer) {
                 case 'ping':
                     break;
                 default:
-                    console.log(`[Signaling] Unknown message type from ${peerId}: ${msg.type}`);
+                    debug(`[Signaling] Unknown message type from ${peerId}: ${msg.type}`);
             }
         });
     });
 
-    console.log('WebSocket signaling server attached at /signaling');
+    debug('WebSocket signaling server attached at /signaling');
 }
 
 process.on('uncaughtException', (err) => {
@@ -326,15 +329,15 @@ async function startServer(options = {}) {
         if (fs.existsSync(PERSIST_FILES)) {
             const data = JSON.parse(fs.readFileSync(PERSIST_FILES, 'utf-8'));
             if (data.length > 0) await db.files.bulkInsert(data);
-            console.log(`Loaded ${data.length} file docs from disk`);
+            debug(`Loaded ${data.length} file docs from disk`);
         }
         if (fs.existsSync(PERSIST_PRESENCE)) {
             const data = JSON.parse(fs.readFileSync(PERSIST_PRESENCE, 'utf-8'));
             if (data.length > 0) await db.presence.bulkInsert(data);
-            console.log(`Loaded ${data.length} presence docs from disk`);
+            debug(`Loaded ${data.length} presence docs from disk`);
         }
     } catch (err) {
-        console.log('No persisted data found, starting fresh');
+        debug('No persisted data found, starting fresh');
     }
 
     // Build adapter — override listen to use HTTPS when TLS is enabled
@@ -370,7 +373,7 @@ async function startServer(options = {}) {
             const origJson = res.json.bind(res);
             res.json = (data) => {
                 if (Array.isArray(data) && data.length > 0) {
-                    console.log(`[PUSH RESPONSE] ${data.length} conflicts returned`);
+                    debug(`[PUSH RESPONSE] ${data.length} conflicts returned`);
                 }
                 return origJson(data);
             };

@@ -159,6 +159,7 @@ The configuration file lives at `.ovcs/ovcs.json` in each tracked project direct
 |-------|------|---------|-------------|
 | `p2p.enabled` | boolean | `false` | Enable P2P WebRTC replication |
 | `p2p.signalingServer` | string | `""` | WebSocket URL for signaling (e.g. `wss://host:5984/signaling`). Derived from `remote` if empty |
+| `p2p.iceServers` | array | `[]` | ICE server objects (`{urls, username, credential}`) for STUN/TURN. Uses simple-peer defaults (Google/Twilio STUN) when empty. Required for cross-NAT connectivity |
 
 ### TLS Settings
 
@@ -208,7 +209,8 @@ The configuration file lives at `.ovcs/ovcs.json` in each tracked project direct
   },
   "p2p": {
     "enabled": false,
-    "signalingServer": ""
+    "signalingServer": "",
+    "iceServers": []
   },
   "tls": {
     "rejectUnauthorized": true,

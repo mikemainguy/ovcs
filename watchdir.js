@@ -18,8 +18,8 @@ async function watchDir(metadata, pwd, port, options = {}) {
         debug('Ignoring:', metadata.ignore);
     }
     const baseDirectory = options.baseDirectory || metadata.baseDirectory || '.';
-    console.log(`Starting file watcher on: ${baseDirectory}`);
-    console.log('Ignored patterns:', metadata.ignore);
+    debug(`Starting file watcher on: ${baseDirectory}`);
+    debug('Ignored patterns:', metadata.ignore);
 
     const watcher = watch(baseDirectory,
         {
@@ -34,7 +34,7 @@ async function watchDir(metadata, pwd, port, options = {}) {
     watcher.on('ready', async () => {
         initialScanDone = true;
         setScanStatus(true, initialScanCount);
-        console.log(`Initial scan complete: ${initialScanCount} files found`);
+        debug(`Initial scan complete: ${initialScanCount} files found`);
         // Start replication now that local DB is fully populated
         await startReplication(options);
     });
@@ -63,7 +63,7 @@ async function watchDir(metadata, pwd, port, options = {}) {
                             const hash = sha256(data);
                             await saveData({id: path, type: type, hash: hash}, metadata);
                             if (initialScanDone) {
-                                console.log(`File ${event}: ${path}`);
+                                debug(`File ${event}: ${path}`);
                             }
                             debug('add', path, hash);
                         } catch (err) {

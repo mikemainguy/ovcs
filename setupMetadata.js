@@ -32,7 +32,8 @@ const defaultMetadata = {
     },
     'p2p': {
         'enabled': false,
-        'signalingServer': ''
+        'signalingServer': '',
+        'iceServers': []
     },
     'tls': {
         'rejectUnauthorized': true,

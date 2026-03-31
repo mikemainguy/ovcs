@@ -160,7 +160,7 @@ async function initPresence(meta, pwd, options = {}) {
     heartbeatTimer = setInterval(() => heartbeat(), interval);
     debug(`Heartbeat started (${interval}ms interval)`);
 
-    console.log(`Presence active as ${metadata.email} (team: ${metadata.teamId})`);
+    debug(`Presence active as ${metadata.email} (team: ${metadata.teamId})`);
 }
 
 async function heartbeat() {
