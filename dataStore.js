@@ -28,6 +28,7 @@ import { replicateServer } from 'rxdb-server/plugins/replication-server';
 import { initP2P, getP2PStatus, fetchContentFromPeer } from './p2p.js';
 import { diff3Merge } from 'node-diff3';
 import { diffLines } from 'diff';
+import { initEarlyWarning, computeOverlaps, getWarnings, getHotspots, onWarning, removeWarningListener, shutdown as shutdownEarlyWarning } from './earlyWarning.js';
 
 // Track recently changed files for presence
 let recentActiveFiles = [];
@@ -301,12 +302,130 @@ async function onRemoteDocChange(changeEvent) {
     debug(`[Reconcile] Added local revision for ${docData.file} (local: ${localHash.substring(0, 8) || 'missing'})`);
 }
 
+// Clean up stale revisions across all file documents.
+// Uses a two-tier approach:
+//   - Tier 1 (immediate, in /diff): disconnected nodes are hidden from the UI
+//   - Tier 2 (deferred, here): revisions from nodes offline > REVISION_TTL are deleted
+// Also removes ghost documents where all remaining revision hashes are empty.
+async function cleanupRevisions(metadata) {
+    if (!filesCollection) return;
+    const clientKey = metadata.clientId || metadata.email;
+    const revisionTTL = OVCSSETTINGS.REVISION_TTL;
+
+    // Build a map of clientId -> lastSeen from all presence records (active + offline).
+    // Revision keys are raw clientId UUIDs; presence now stores clientId too.
+    const presenceCollection = getPresenceCollection();
+    const clientIdLastSeen = new Map(); // clientId -> lastSeen Date
+    clientIdLastSeen.set(clientKey, new Date()); // Always keep our own
+
+    if (presenceCollection) {
+        const allPresenceDocs = await presenceCollection.find().exec();
+        for (const pdoc of allPresenceDocs) {
+            const p = pdoc.toJSON();
+            if (p.clientId) {
+                const lastSeen = p.lastSeen ? new Date(p.lastSeen) : new Date(0);
+                clientIdLastSeen.set(p.clientId, lastSeen);
+            }
+        }
+    }
+
+    const now = Date.now();
+    const docs = await filesCollection.find().exec();
+    let pruned = 0, removed = 0;
+
+    for (const doc of docs) {
+        const d = doc.toJSON();
+        if (!d.revisions) continue;
+
+        const revKeys = Object.keys(d.revisions);
+        if (revKeys.length === 0) continue;
+
+        // Prune revisions from nodes whose clientId hasn't been seen within REVISION_TTL
+        const revisions = JSON.parse(JSON.stringify(d.revisions));
+        let changed = false;
+        for (const key of revKeys) {
+            if (key === clientKey) continue; // Never prune our own
+
+            const lastSeen = clientIdLastSeen.get(key);
+            if (!lastSeen || (now - lastSeen.getTime()) > revisionTTL) {
+                delete revisions[key];
+                changed = true;
+                pruned++;
+            }
+        }
+
+        // Remove ghost documents where all remaining revisions have empty hashes
+        const remainingKeys = Object.keys(revisions);
+        const allEmpty = remainingKeys.length === 0 ||
+            remainingKeys.every(k => !revisions[k].hash || revisions[k].hash === '');
+
+        if (allEmpty) {
+            await doc.remove();
+            removed++;
+            continue;
+        }
+
+        if (changed) {
+            await doc.patch({ revisions, updatedAt: Date.now() });
+        }
+    }
+
+    if (pruned > 0 || removed > 0) {
+        debug(`Revision cleanup: ${pruned} stale revisions pruned, ${removed} ghost documents removed`);
+    }
+}
+
+// After a successful merge or pull, collapse all revisions to a single current hash.
+// This clears the conflict state since everyone now has the same content.
+async function collapseRevisionsAfterResolve(fileId) {
+    if (!filesCollection || !storedMetadata) return;
+    const doc = await filesCollection.findOne(fileId).exec();
+    if (!doc) return;
+
+    const d = doc.toJSON();
+    if (!d.file) return;
+
+    // Read current disk state as the canonical hash
+    const filePath = path.resolve(watchBaseDirectory, d.file);
+    let currentHash = '';
+    if (fs.existsSync(filePath)) {
+        try {
+            const content = fs.readFileSync(filePath);
+            currentHash = sha256(content);
+        } catch (err) {
+            debug('[Cleanup] Error reading file after resolve:', err.message);
+            return;
+        }
+    }
+
+    // Update only our own revision — other nodes will self-correct via
+    // onRemoteDocChange or their own reconciliation cycle
+    const clientKey = storedMetadata.clientId || storedMetadata.email;
+    const now = new Date().toISOString();
+    const commitHash = getGitHead();
+    const revisions = d.revisions ? JSON.parse(JSON.stringify(d.revisions)) : {};
+    revisions[clientKey] = {
+        email: storedMetadata.email,
+        hash: currentHash,
+        updated: now,
+        ...(commitHash && { commitHash })
+    };
+
+    await doc.patch({
+        hash: currentHash,
+        revisions,
+        updatedAt: Date.now()
+    });
+    debug(`[Cleanup] Updated local revision for ${d.file} to hash ${currentHash.substring(0, 8)}`);
+}
+
 // Periodic reconciliation — safety net for missed chokidar events
 function startReconciliationTimer(metadata, baseDirectory) {
     if (reconcileTimer) return;
     reconcileTimer = setInterval(async () => {
         try {
             await reconcileFilesystem(metadata, baseDirectory);
+            await cleanupRevisions(metadata);
         } catch (err) {
             debug('Periodic reconciliation error:', err);
         }
@@ -405,6 +524,8 @@ async function saveData(data, metadata) {
         updateActiveFiles(recentActiveFiles).catch(err => {
             debug('Presence active files update error:', err);
         });
+        // Trigger immediate overlap check when local files change
+        computeOverlaps();
     }
 }
 
@@ -436,7 +557,20 @@ async function initWeb(metadata, pwd, port, options = {}) {
         }
     }
 
-    // 5. Start web server (replication deferred until after chokidar scan)
+    // 5. Initialize early warning system (overlap detection)
+    if (metadata.presence?.enabled && metadata.teamId) {
+        try {
+            const presenceCollection = getPresenceCollection();
+            if (presenceCollection) {
+                initEarlyWarning(presenceCollection, filesCollection, metadata.clientId || metadata.email);
+                debug('Early warning system initialized');
+            }
+        } catch (err) {
+            debug('Error initializing early warning:', err);
+        }
+    }
+
+    // 6. Start web server (replication deferred until after chokidar scan)
     debug('Calling web()...');
     web(port, metadata, options);
     debug('initWeb complete');
@@ -449,6 +583,9 @@ async function startReplication(options = {}) {
 
     // Reconcile DB against filesystem now that scan is done
     await reconcileFilesystem(metadata, watchBaseDirectory);
+
+    // Clean up stale revisions on startup (before replication sends stale data)
+    await cleanupRevisions(metadata);
 
     // Start P2P or server replication
     if (options.p2p && metadata.teamId) {
@@ -527,13 +664,24 @@ function web(port, metadata = {}, options = {}) {
         const docs = await filesCollection.find().exec();
         const localClientId = metadata.clientId || metadata.email;
 
-        // Classify each document using revision hashes as source of truth
+        // Build set of active clientIds from presence for filtering revisions.
+        // Revision keys are raw clientId UUIDs; presence now stores clientId too.
+        const activeNodes = await getActiveNodes();
+        const activeClientIds = new Set();
+        activeClientIds.add(localClientId); // Always include ourselves
+        for (const n of activeNodes) {
+            if (n.clientId) activeClientIds.add(n.clientId);
+        }
+
+        // Classify each document using revision hashes as source of truth.
+        // Only considers revisions from nodes currently active in presence.
         function classifyDoc(doc) {
             const d = doc.toJSON ? doc.toJSON() : doc;
             if (!d.file || d.type !== 'file') return null;
             if (!d.revisions) return null;
 
-            const revKeys = Object.keys(d.revisions);
+            // Filter to only active nodes' revisions (revision keys are clientIds)
+            const revKeys = Object.keys(d.revisions).filter(k => activeClientIds.has(k));
             if (revKeys.length === 0) return null;
 
             const hashes = new Set(revKeys.map(k => d.revisions[k].hash));
@@ -626,6 +774,31 @@ function web(port, metadata = {}, options = {}) {
 
         req.on('close', () => sub.unsubscribe());
     });
+
+    // Early warning endpoints
+    app.get("/warnings", (req, res) => {
+        res.json(getWarnings());
+    });
+    app.get("/hotspots", (req, res) => {
+        const limit = Math.max(1, parseInt(req.query.limit) || 10);
+        res.json(getHotspots(limit));
+    });
+    app.get("/warning-events", (req, res) => {
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+        });
+        res.write('data: {"type":"connected"}\n\n');
+
+        const handler = (event) => {
+            res.write(`data: ${JSON.stringify(event)}\n\n`);
+        };
+        onWarning(handler);
+
+        req.on('close', () => removeWarningListener(handler));
+    });
+
     app.get("/content/:fileId", async (req, res) => {
         const { fileId } = req.params;
         debug(`[Content] Request for ${fileId}`);
@@ -781,6 +954,9 @@ function web(port, metadata = {}, options = {}) {
             fs.writeFileSync(filePath, result.mergedContent);
             debug(`[Merge] Wrote merged ${d.file} (${result.mergedContent.length} bytes, strategy: ${result.strategy})`);
 
+            // Collapse revisions now that conflict is resolved
+            await collapseRevisionsAfterResolve(fileId);
+
             res.json({
                 success: true,
                 file: d.file,
@@ -810,6 +986,9 @@ function web(port, metadata = {}, options = {}) {
             }
             fs.writeFileSync(filePath, result.content);
             debug(`[Pull] Wrote ${result.file} (${result.content.length} bytes, source: ${result.source})`);
+
+            // Collapse revisions now that we have the pulled content
+            await collapseRevisionsAfterResolve(fileId);
 
             res.json({
                 fileId,

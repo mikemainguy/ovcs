@@ -78,6 +78,16 @@
         .pull-all-btn:hover { background: #218838; }
         .pull-all-btn:disabled { opacity: 0.5; cursor: default; }
         .pull-status { font-size: 0.85em; color: #666; margin-left: 8px; }
+        .overlap-banner { background: #fff3cd; border: 1px solid #f59e0b; border-radius: 4px; padding: 6px 12px; margin-bottom: 8px; font-size: 0.85em; color: #92400e; display: flex; align-items: center; gap: 8px; }
+        .overlap-banner .overlap-icon { font-size: 1.1em; }
+        .overlap-banner .overlap-sev { font-weight: 700; padding: 1px 6px; border-radius: 3px; font-size: 0.8em; color: #fff; }
+        .overlap-sev-low { background: #f59e0b; }
+        .overlap-sev-medium { background: #f97316; }
+        .overlap-sev-high { background: #dc2626; }
+        .orientation-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 0.9em; color: #555; }
+        .orient-btn { padding: 6px 14px; border: 1px solid #ddd; background: #fff; border-radius: 4px; cursor: pointer; font-size: 0.85em; font-weight: 600; }
+        .orient-btn.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+        .orient-btn:hover:not(.active) { background: #f0f0f0; }
         .nav-search { margin-left: auto; display: flex; gap: 4px; align-items: center; }
         .nav-search input { padding: 4px 8px; border: 1px solid #475569; border-radius: 4px; background: #334155; color: #fff; font-size: 0.85em; width: 200px; }
         .nav-search input::placeholder { color: #94a3b8; }
@@ -115,6 +125,11 @@
     <div class="container">
         <h1>Diff Viewer</h1>
         <div id="summary" class="summary-bar"></div>
+        <div class="orientation-bar">
+            <span>Local on:</span>
+            <button class="orient-btn" id="orient-left" onclick="setOrientation('left')">Left</button>
+            <button class="orient-btn active" id="orient-right" onclick="setOrientation('right')">Right</button>
+        </div>
         <div id="pagination-top" class="pagination"></div>
         <div id="content"><div class="loading">Loading...</div></div>
         <div id="pagination-bottom" class="pagination"></div>
@@ -129,6 +144,8 @@
         let currentFilter = null; // null = all
         let currentPage = 1;
         let pageSize = 20;
+        let activeOverlaps = {}; // fileId -> warning data
+        let localSide = 'right'; // 'left' or 'right' — which side shows local content
 
         function createUnifiedDiff(filename, oldText, newText, oldHeader, newHeader) {
             return Diff.createTwoFilesPatch('a/' + filename, 'b/' + filename, oldText || '', newText || '', oldHeader, newHeader);
@@ -197,50 +214,76 @@
                 );
                 const otherKeys = revKeys.filter(k => k !== localKey);
 
-                let leftLabel, rightLabel, leftContent, rightContent, leftTimestamp, rightTimestamp;
+                // Compute local vs remote labels, then assign to left/right based on localSide toggle
+                let localLabel, localTimestamp, remoteLabel, remoteTimestamp;
 
-                // Content is no longer in the DB — labels and timestamps come from metadata,
-                // actual content is fetched on-demand from /content/:fileId
                 if (missingRemotely) {
                     const localRev = localKey ? revisions[localKey] : null;
-                    leftLabel = 'Remote (missing)';
-                    leftContent = '';
-                    leftTimestamp = null;
-                    rightLabel = 'Local';
-                    rightContent = ''; // fetched on expand
-                    rightTimestamp = localRev?.updated || null;
+                    localLabel = 'Local';
+                    localTimestamp = localRev?.updated || null;
+                    remoteLabel = 'Remote (missing)';
+                    remoteTimestamp = null;
                 } else if (missingLocally) {
-                    if (revKeys.length > 0) {
+                    localLabel = 'Local (missing)';
+                    localTimestamp = null;
+                    if (otherKeys.length > 0) {
+                        const rk = otherKeys[0];
+                        remoteLabel = displayName(rk);
+                        remoteTimestamp = revisions[rk]?.updated || null;
+                    } else if (revKeys.length > 0) {
                         const rk = revKeys[0];
-                        leftLabel = 'Local (missing)';
-                        leftContent = '';
-                        leftTimestamp = null;
-                        rightLabel = displayName(rk);
-                        rightContent = ''; // fetched on expand
-                        rightTimestamp = revisions[rk].updated;
+                        remoteLabel = displayName(rk);
+                        remoteTimestamp = revisions[rk]?.updated || null;
                     } else {
-                        leftLabel = 'Local (missing)'; leftContent = ''; leftTimestamp = null;
-                        rightLabel = 'Remote'; rightContent = ''; rightTimestamp = null;
+                        remoteLabel = 'Remote';
+                        remoteTimestamp = null;
                     }
                 } else {
                     const localRev = localKey ? revisions[localKey] : null;
                     if (localRev && otherKeys.length > 0) {
                         const ok = otherKeys[0];
-                        leftLabel = displayName(ok); leftContent = ''; leftTimestamp = revisions[ok].updated;
-                        rightLabel = 'Local'; rightContent = ''; rightTimestamp = localRev.updated;
+                        localLabel = 'Local';
+                        localTimestamp = localRev.updated;
+                        remoteLabel = displayName(ok);
+                        remoteTimestamp = revisions[ok].updated;
                     } else if (localRev) {
-                        leftLabel = 'Base'; leftContent = ''; leftTimestamp = null;
-                        rightLabel = 'Local'; rightContent = ''; rightTimestamp = localRev.updated;
+                        localLabel = 'Local';
+                        localTimestamp = localRev.updated;
+                        remoteLabel = 'Base';
+                        remoteTimestamp = null;
                     } else if (revKeys.length >= 1) {
                         const ok = revKeys[0];
-                        leftLabel = displayName(ok); leftContent = ''; leftTimestamp = revisions[ok].updated;
-                        rightLabel = 'Base'; rightContent = ''; rightTimestamp = null;
+                        localLabel = 'Base';
+                        localTimestamp = null;
+                        remoteLabel = displayName(ok);
+                        remoteTimestamp = revisions[ok].updated;
                     } else {
                         return;
                     }
                 }
 
+                // Assign to left/right based on orientation toggle
+                let leftLabel, rightLabel, leftTimestamp, rightTimestamp;
+                if (localSide === 'left') {
+                    leftLabel = localLabel; leftTimestamp = localTimestamp;
+                    rightLabel = remoteLabel; rightTimestamp = remoteTimestamp;
+                } else {
+                    leftLabel = remoteLabel; leftTimestamp = remoteTimestamp;
+                    rightLabel = localLabel; rightTimestamp = localTimestamp;
+                }
+
                 const headerClass = missingLocally ? 'missing-local-header' : missingRemotely ? 'missing-remote-header' : '';
+
+                // Check for active overlap warning on this file
+                const overlapKey = Object.keys(activeOverlaps).find(k => k === doc.file || k === item.id);
+                const overlap = overlapKey ? activeOverlaps[overlapKey] : null;
+                let overlapBannerHtml = '';
+                if (overlap) {
+                    const sevClass = overlap.severity >= 3 ? 'overlap-sev-high' : overlap.severity >= 2 ? 'overlap-sev-medium' : 'overlap-sev-low';
+                    const users = overlap.nodes.map(n => n.email).filter(e => e !== currentUserEmail).join(', ');
+                    overlapBannerHtml = `<div class="overlap-banner"><span class="overlap-icon">&#9888;</span><span class="overlap-sev ${sevClass}">${overlap.severity.toFixed(1)}</span> Active overlap &mdash; also being edited by: ${users || 'others'}</div>`;
+                }
+
                 const pullBtnHtml = missingLocally
                     ? `<button class="pull-btn" id="pull-btn-${index}" onclick="event.stopPropagation(); pullFile('${item.id}', ${index})">Pull</button>`
                     : '';
@@ -252,6 +295,7 @@
 
                 html += `
                     <div class="conflict-card">
+                        ${overlapBannerHtml}
                         <div class="conflict-header ${headerClass}" onclick="toggleDiff('${diffId}')">
                             <h2>${doc.file} ${badgeHtml} <span class="expand-hint">click to expand</span></h2>
                             <div class="revision-info">
@@ -336,9 +380,11 @@
                             }
                         }
 
-                        // Use local and remote content from merge-check for the diff
-                        const left = mergeData.remoteContent || '';
-                        const right = mergeData.localContent || '';
+                        // Assign local/remote content based on orientation toggle
+                        const localC = mergeData.localContent || '';
+                        const remoteC = mergeData.remoteContent || '';
+                        const left = localSide === 'left' ? localC : remoteC;
+                        const right = localSide === 'left' ? remoteC : localC;
                         diffContentCache[diffId] = { left, right };
                         renderDiffInElement(el, diffId, filename, left, right, leftHeader, rightHeader);
                         return;
@@ -351,16 +397,11 @@
                     const data = await resp.json();
                     const isMissingLocally = el.dataset.missingLocally === 'true';
 
-                    let left = '', right = '';
-                    if (isMissingLocally) {
-                        // We don't have it, remote does
-                        left = '';
-                        right = data.content || '';
-                    } else {
-                        // We have it, remote doesn't
-                        left = data.content || '';
-                        right = '';
-                    }
+                    // For missing files: one side has content, the other is empty
+                    const localC = isMissingLocally ? '' : (data.content || '');
+                    const remoteC = isMissingLocally ? (data.content || '') : '';
+                    const left = localSide === 'left' ? localC : remoteC;
+                    const right = localSide === 'left' ? remoteC : localC;
 
                     diffContentCache[diffId] = { left, right };
                     renderDiffInElement(el, diffId, filename, left, right, leftHeader, rightHeader);
@@ -426,6 +467,15 @@
             el.querySelector(`.view-toggle button:${view === 'side-by-side' ? 'first-child' : 'last-child'}`).classList.add('active');
         }
 
+        function setOrientation(side) {
+            localSide = side;
+            Object.keys(diffContentCache).forEach(k => delete diffContentCache[k]);
+            // Update toggle button styles
+            document.getElementById('orient-left').classList.toggle('active', side === 'left');
+            document.getElementById('orient-right').classList.toggle('active', side === 'right');
+            fetchAndRender();
+        }
+
         function setFilter(type) {
             currentFilter = type;
             currentPage = 1;
@@ -450,9 +500,19 @@
             try {
                 let url = `/diff?page=${currentPage}&limit=${pageSize}`;
                 if (currentFilter) url += `&type=${currentFilter}`;
-                const response = await fetch(url);
+                const [response, warningsResp] = await Promise.all([
+                    fetch(url),
+                    fetch('/warnings').catch(() => null)
+                ]);
                 if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
                 const data = await response.json();
+
+                // Update active overlaps for banner rendering
+                if (warningsResp?.ok) {
+                    const wData = await warningsResp.json();
+                    activeOverlaps = {};
+                    (wData.overlaps || []).forEach(w => { activeOverlaps[w.fileId] = w; });
+                }
 
                 // Always update summary and pagination
                 renderSummary(data.summary, data.total);

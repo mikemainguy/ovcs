@@ -30,6 +30,7 @@ const presenceSchema = {
     type: 'object',
     properties: {
         id:          { type: 'string', maxLength: 100 },
+        clientId:    { type: 'string' },
         email:       { type: 'string' },
         hostname:    { type: 'string' },
         projectPath: { type: 'string' },
@@ -115,6 +116,7 @@ async function initPresence(meta, pwd, options = {}) {
     try {
         await presenceCollection.upsert({
             id: nodeId,
+            clientId: metadata.clientId || '',
             email: metadata.email,
             hostname: os.hostname(),
             projectPath: pwd,
@@ -294,6 +296,7 @@ async function getActiveNodes() {
                 const d = doc.toJSON();
                 return {
                     id: d.id,
+                    clientId: d.clientId || '',
                     email: d.email,
                     hostname: d.hostname,
                     projectPath: d.projectPath,

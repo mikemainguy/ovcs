@@ -37,6 +37,16 @@
         .sync-state .error { color: #dc2626; }
         .sync-state .connecting { color: #f59e0b; }
         .db-info { font-family: monospace; font-size: 0.85em; }
+        .warning-item { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #eee; }
+        .warning-item:last-child { border-bottom: none; }
+        .warning-severity { font-size: 0.75em; font-weight: 700; padding: 3px 8px; border-radius: 4px; color: #fff; flex-shrink: 0; }
+        .severity-low { background: #f59e0b; }
+        .severity-medium { background: #f97316; }
+        .severity-high { background: #dc2626; }
+        .warning-file { font-family: monospace; font-weight: 600; font-size: 0.9em; }
+        .warning-users { font-size: 0.85em; color: #555; }
+        .warning-count-badge { display: inline-block; font-size: 0.75em; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: #f59e0b; color: #fff; margin-left: 8px; }
+        .no-warnings { color: #16a34a; font-style: italic; }
         .help-text { font-size: 0.85em; color: #666; line-height: 1.5; }
         .help-text code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
         .help-text pre { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.9em; }
@@ -85,6 +95,11 @@
         <div class="section">
             <h2>Team Members</h2>
             <div id="presence"><span class="no-nodes">Loading...</span></div>
+        </div>
+
+        <div class="section">
+            <h2>Active Overlaps <span id="warning-count"></span></h2>
+            <div id="warnings"><span class="no-warnings">No overlaps detected.</span></div>
         </div>
 
         <div class="section">
@@ -207,6 +222,41 @@ ovcs --p2p --dir /path        # P2P + custom directory</pre>
                 document.getElementById('info').innerText = `${data.doc_count} documents tracked (storage: ${data.storage})`;
             }).catch(() => {});
         }, 2000);
+
+        // Poll warnings
+        function renderWarnings(data) {
+            const el = document.getElementById('warnings');
+            const badge = document.getElementById('warning-count');
+            if (!data || !data.overlaps || data.overlaps.length === 0) {
+                el.innerHTML = '<span class="no-warnings">No overlaps detected.</span>';
+                badge.innerHTML = '';
+                return;
+            }
+            badge.innerHTML = `<span class="warning-count-badge">${data.count}</span>`;
+            el.innerHTML = data.overlaps.map(w => {
+                const sevClass = w.severity >= 3 ? 'severity-high' : w.severity >= 2 ? 'severity-medium' : 'severity-low';
+                const users = w.nodes.map(n => n.email).join(', ');
+                const branches = [...new Set(w.nodes.map(n => n.gitBranch).filter(Boolean))];
+                const branchInfo = branches.length > 1 ? ' (different branches: ' + branches.join(', ') + ')' : '';
+                return `
+                    <div class="warning-item">
+                        <span class="warning-severity ${sevClass}">${w.severity.toFixed(1)}</span>
+                        <div>
+                            <div class="warning-file">${w.fileId}</div>
+                            <div class="warning-users">Edited by: ${users}${branchInfo}</div>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+        function fetchWarnings() {
+            fetch('/warnings').then(r => r.json()).then(renderWarnings).catch(() => {});
+        }
+        fetchWarnings();
+        setInterval(fetchWarnings, 5000);
+
+        // SSE for real-time warning updates
+        const warningSource = new EventSource('/warning-events');
+        warningSource.onmessage = () => fetchWarnings();
 
         // Poll sync status
         function fetchSync() {

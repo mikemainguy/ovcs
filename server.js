@@ -32,6 +32,17 @@ const TLS_DIR = `./${OVCSSETTINGS.ROOT_DIR}/tls`;
 
 // --- TLS helpers ---
 
+function getNetworkAddresses() {
+    const interfaces = os.networkInterfaces();
+    const addresses = new Set(['127.0.0.1', '::1']);
+    for (const nets of Object.values(interfaces)) {
+        for (const net of nets) {
+            addresses.add(net.address);
+        }
+    }
+    return Array.from(addresses);
+}
+
 async function loadOrGenerateCert() {
     const certPath = `${TLS_DIR}/cert.pem`;
     const keyPath = `${TLS_DIR}/key.pem`;
@@ -44,11 +55,25 @@ async function loadOrGenerateCert() {
     }
 
     debug('[TLS] Generating self-signed certificate...');
-    const attrs = [{ name: 'commonName', value: 'ovcs-server' }];
+    const hostname = os.hostname();
+    const addresses = getNetworkAddresses();
+
+    const altNames = [
+        { type: 2, value: 'localhost' },
+        { type: 2, value: hostname },
+        ...addresses.map(ip => ({ type: 7, ip }))
+    ];
+
+    debug(`[TLS] SANs: localhost, ${hostname}, ${addresses.join(', ')}`);
+
+    const attrs = [{ name: 'commonName', value: hostname }];
     const pems = await selfsigned.generate(attrs, {
         days: 365,
         keySize: 2048,
-        algorithm: 'sha256'
+        algorithm: 'sha256',
+        extensions: [
+            { name: 'subjectAltName', altNames }
+        ]
     });
 
     fs.mkdirSync(TLS_DIR, { recursive: true });
@@ -91,6 +116,7 @@ const presenceSchema = {
     type: 'object',
     properties: {
         id:          { type: 'string', maxLength: 100 },
+        clientId:    { type: 'string' },
         email:       { type: 'string' },
         hostname:    { type: 'string' },
         projectPath: { type: 'string' },
@@ -361,7 +387,7 @@ async function startServer(options = {}) {
         database: db,
         adapter,
         port: port,
-        host: host,
+        hostname: host,
         cors: '*'
     });
 

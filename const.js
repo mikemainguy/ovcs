@@ -17,6 +17,11 @@ const OVCSSETTINGS = {
     HEARTBEAT_INTERVAL: 30000,
     STALE_TIMEOUT: 120000,
     RECONCILE_INTERVAL: 300000, // 5 minutes — safety net for missed chokidar events
+    // Early warning / overlap detection settings
+    OVERLAP_CHECK_INTERVAL: 10000,  // 10s fallback overlap check
+    OVERLAP_ACTIVE_WINDOW: 60000,   // "recently edited" threshold for severity boost
+    // Revision cleanup settings
+    REVISION_TTL: 86400000,         // 24h — prune revisions from nodes offline longer than this
     // Language mappings for AST parsing
     LANGUAGE_MAP: {
         '.js': 'javascript',

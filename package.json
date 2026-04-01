@@ -1,6 +1,6 @@
 {
   "name": "ovcs",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -41,6 +41,10 @@
     "tree-sitter-javascript": "^0.20.1",
     "tree-sitter-typescript": "^0.20.3",
     "ws": "^8.20.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mikemainguy/ovcs.git"
   },
   "description": "quick and dirty realtime version control for a directory, helps avoid conflicts on distributed teams",
   "devDependencies": {
