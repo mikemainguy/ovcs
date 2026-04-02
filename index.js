@@ -7,7 +7,7 @@ import {watchDir} from "./watchdir.js";
 import {setupMetadata, configureTls} from "./setupMetadata.js";
 import {debug} from "./debug.js";
 import {OVCSSETTINGS} from "./const.js";
-import {startServer} from "./server.js";
+import {startServer} from "./server/index.js";
 import {stopPresence} from "./presence.js";
 import {stopPersistence, stopReconciliationTimer} from "./dataStore.js";
 import {stopP2P} from "./p2p.js";

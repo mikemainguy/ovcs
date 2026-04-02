@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { startServer } from "./server.js";
+import { startServer } from "./server/index.js";
 import { OVCSSETTINGS } from "./const.js";
 
 const __dirname = import.meta.dirname || dirname(fileURLToPath(import.meta.url));
