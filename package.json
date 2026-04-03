@@ -1,6 +1,6 @@
 {
   "name": "ovcs",
-  "version": "0.5.9",
+  "version": "0.5.10",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -44,7 +44,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mikemainguy/ovcs.git"
+    "url": "git+https://github.com/mikemainguy/ovcs.git"
   },
   "description": "quick and dirty realtime version control for a directory, helps avoid conflicts on distributed teams",
   "devDependencies": {
