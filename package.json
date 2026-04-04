@@ -37,7 +37,8 @@
     "rxdb": "^16.21.1",
     "rxdb-server": "^16.21.1",
     "selfsigned": "^5.5.0",
-    "tree-sitter-wasms": "^0.1.13",
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-typescript": "^0.23.2",
     "web-tree-sitter": "^0.26.8",
     "ws": "^8.20.0"
   },

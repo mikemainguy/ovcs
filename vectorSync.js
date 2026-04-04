@@ -12,10 +12,11 @@ let syncQueue = [];
 let isProcessing = false;
 let initialized = false;
 
-const IGNORE_DIRS = new Set(['.ovcs', 'node_modules', '.git', '.hg', '.svn', 'dist', 'build', 'coverage', '.next', '.nuxt']);
+let ignoreDirs = new Set();
 
-async function initVectorSync(workingDir) {
+async function initVectorSync(workingDir, ignorePatterns = []) {
     pwd = workingDir;
+    ignoreDirs = new Set(ignorePatterns);
 
     try {
         await initVectorStore(pwd);
@@ -153,7 +154,7 @@ function walkDirectory(dir, baseDir) {
     }
 
     for (const entry of entries) {
-        if (IGNORE_DIRS.has(entry.name)) continue;
+        if (ignoreDirs.has(entry.name)) continue;
 
         const fullPath = path.join(dir, entry.name);
 

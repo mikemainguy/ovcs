@@ -35,7 +35,7 @@ async function initWeb(metadata, pwd, port, options = {}) {
 
     // 3. Initialize vector sync (use baseDirectory so file paths resolve correctly)
     try {
-        await initVectorSync(getWatchBaseDirectory());
+        await initVectorSync(getWatchBaseDirectory(), metadata.ignore || []);
         debug('Vector sync initialized for web');
         // Index existing files in the background (don't block startup)
         indexExistingFiles().catch(err => {

@@ -11,15 +11,14 @@ const languages = {};
 
 async function initTreeSitter() {
     try {
-        const TreeSitter = (await import('web-tree-sitter')).default;
+        const { Parser: TreeSitter, Language } = await import('web-tree-sitter');
         await TreeSitter.init();
         Parser = TreeSitter;
 
         const require = createRequire(import.meta.url);
-        const wasmsDir = path.dirname(require.resolve('tree-sitter-wasms/out/tree-sitter-javascript.wasm'));
 
-        languages.javascript = await TreeSitter.Language.load(path.join(wasmsDir, 'tree-sitter-javascript.wasm'));
-        languages.typescript = await TreeSitter.Language.load(path.join(wasmsDir, 'tree-sitter-typescript.wasm'));
+        languages.javascript = await Language.load(require.resolve('tree-sitter-javascript/tree-sitter-javascript.wasm'));
+        languages.typescript = await Language.load(require.resolve('tree-sitter-typescript/tree-sitter-typescript.wasm'));
 
         treeSitterAvailable = true;
         debug('Tree-sitter (WASM) loaded successfully');
