@@ -46,5 +46,5 @@
     "type": "git",
     "url": "git+https://github.com/mikemainguy/ovcs.git"
   },
-  "description": "quick and dirty realtime version control for a directory, helps avoid conflicts on distributed teams",
+  "description": "quick and dirty realtime version control for a directory, helps avoid conflicts on distributed teams"
 }
