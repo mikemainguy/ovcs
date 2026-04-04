@@ -102,7 +102,7 @@ async function searchCodeChunks(queryVector, limit = 10) {
 
     try {
         const results = await codeChunksTable
-            .search(queryVector)
+            .vectorSearch(queryVector)
             .limit(limit)
             .toArray();
         return results;
@@ -116,7 +116,7 @@ async function searchAstNodes(queryVector, limit = 10, nodeType = null) {
     if (!astNodesTable) return [];
 
     try {
-        let query = astNodesTable.search(queryVector).limit(limit);
+        let query = astNodesTable.vectorSearch(queryVector).limit(limit);
         if (nodeType) {
             query = query.where(`node_type = "${nodeType}"`);
         }
@@ -137,7 +137,7 @@ async function findSimilarFiles(fileId, queryVector, limit = 10) {
 
     try {
         const results = await codeChunksTable
-            .search(queryVector)
+            .vectorSearch(queryVector)
             .where(`file_id != "${fileId}"`)
             .limit(limit)
             .toArray();

@@ -2,6 +2,7 @@ import { searchCodeChunks, searchAstNodes, searchFunctions, findSimilarFiles, ge
 import { generateEmbedding, isModelLoaded } from './embeddings.js';
 import { reindexAll, isVectorSyncInitialized } from './vectorSync.js';
 import { sha256 } from './chunker.js';
+import { OVCSSETTINGS } from './const.js';
 import { debug } from './debug.js';
 import fs from 'node:fs';
 import * as path from 'node:path';
@@ -165,6 +166,8 @@ function setupSearchRoutes(app, db) {
             res.json({
                 initialized: isVectorSyncInitialized(),
                 model_loaded: isModelLoaded(),
+                vector_db_initialized: isInitialized(),
+                supported_extensions: Object.keys(OVCSSETTINGS.LANGUAGE_MAP),
                 ...stats
             });
         } catch (err) {

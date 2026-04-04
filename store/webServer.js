@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import { diff3Merge } from 'node-diff3';
 import { diffLines } from 'diff';
 import { debug } from "../debug.js";
-import { initVectorSync } from '../vectorSync.js';
+import { initVectorSync, indexExistingFiles } from '../vectorSync.js';
 import { setupSearchRoutes } from '../searchApi.js';
 import { initPresence, getActiveNodes, getPresenceCollection } from '../presence.js';
 import { fetchContentFromPeer } from '../p2p.js';
@@ -37,6 +37,10 @@ async function initWeb(metadata, pwd, port, options = {}) {
     try {
         await initVectorSync(getWatchBaseDirectory());
         debug('Vector sync initialized for web');
+        // Index existing files in the background (don't block startup)
+        indexExistingFiles().catch(err => {
+            debug('Error during startup indexing:', err);
+        });
     } catch (err) {
         debug('Error initializing vector sync:', err);
     }

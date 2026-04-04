@@ -1,7 +1,8 @@
-import { initVectorStore, addCodeChunks, addAstNodes, removeFileVectors, clearAllVectors, isInitialized } from './vectorStore.js';
+import { initVectorStore, addCodeChunks, addAstNodes, removeFileVectors, clearAllVectors, isInitialized, getStats } from './vectorStore.js';
 import { initEmbeddings, generateEmbedding, isModelLoaded } from './embeddings.js';
 import { chunkCode, isSupportedFile, sha256 } from './chunker.js';
 import { parseFile, createSearchableText } from './astParser.js';
+import { OVCSSETTINGS } from './const.js';
 import { debug } from './debug.js';
 import fs from 'node:fs';
 import * as path from 'node:path';
@@ -11,6 +12,8 @@ let syncQueue = [];
 let isProcessing = false;
 let initialized = false;
 
+const IGNORE_DIRS = new Set(['.ovcs', 'node_modules', '.git', '.hg', '.svn', 'dist', 'build', 'coverage', '.next', '.nuxt']);
+
 async function initVectorSync(workingDir) {
     pwd = workingDir;
 
@@ -18,7 +21,9 @@ async function initVectorSync(workingDir) {
         await initVectorStore(pwd);
         await initEmbeddings(pwd);
         initialized = true;
-        debug('Vector sync initialized');
+
+        const stats = await getStats();
+        console.log(`[OVCS] Search engine ready (${stats.code_chunks} chunks, ${stats.ast_nodes} AST nodes in index)`);
     } catch (err) {
         debug('Error initializing vector sync:', err);
         initialized = false;
@@ -136,72 +141,148 @@ async function processFileDelete(fileId) {
     debug('Removed file from vector DB:', fileId);
 }
 
+function walkDirectory(dir, baseDir) {
+    const results = [];
+
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (err) {
+        debug('Error reading directory:', dir, err.message);
+        return results;
+    }
+
+    for (const entry of entries) {
+        if (IGNORE_DIRS.has(entry.name)) continue;
+
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory()) {
+            results.push(...walkDirectory(fullPath, baseDir));
+        } else if (entry.isFile()) {
+            const relativePath = path.relative(baseDir, fullPath);
+            if (isSupportedFile(relativePath)) {
+                results.push(relativePath);
+            }
+        }
+    }
+
+    return results;
+}
+
+async function indexExistingFiles() {
+    if (!initialized || !pwd) {
+        debug('Cannot index existing files — vector sync not initialized');
+        return { indexed: 0, skipped: 0, errors: 0 };
+    }
+
+    const stats = await getStats();
+    if (stats.code_chunks > 0) {
+        console.log(`[OVCS] Search index already populated (${stats.code_chunks} chunks, ${stats.ast_nodes} AST nodes) — skipping startup indexing`);
+        return { indexed: 0, skipped: 0, errors: 0, reason: 'already_indexed' };
+    }
+
+    const files = walkDirectory(pwd, pwd);
+    console.log(`[OVCS] Indexing ${files.length} files for search...`);
+
+    let indexed = 0;
+    let errors = 0;
+
+    for (const filePath of files) {
+        try {
+            await processFileSync({ id: filePath }, {});
+            indexed++;
+            if (indexed % 20 === 0) {
+                console.log(`[OVCS] Indexing progress: ${indexed}/${files.length} files`);
+            }
+        } catch (err) {
+            debug('Error indexing file:', filePath, err.message);
+            errors++;
+        }
+    }
+
+    console.log(`[OVCS] Indexing complete: ${indexed} files indexed${errors > 0 ? `, ${errors} errors` : ''}`);
+    return { indexed, skipped: files.length - indexed - errors, errors };
+}
+
 async function reindexAll(db) {
     if (!initialized) {
         throw new Error('Vector sync not initialized');
     }
 
-    debug('Starting full reindex...');
+    console.log('[OVCS] Starting full reindex...');
 
     await clearAllVectors();
 
-    const allDocs = await db.allDocs({ include_docs: true });
-    let processed = 0;
-    let errors = 0;
+    // Try RxDB collection first, fall back to filesystem walk
+    let filesToIndex = [];
 
-    for (const row of allDocs.rows) {
-        const doc = row.doc;
-
-        if (doc.type === 'file' && doc.file && isSupportedFile(doc.file)) {
-            try {
-                // Read content from disk
-                let content = '';
-                try {
-                    const resolvedPath = path.resolve(pwd || '.', doc.file);
-                    if (fs.existsSync(resolvedPath)) {
-                        content = fs.readFileSync(resolvedPath, 'utf-8');
-                    }
-                } catch (err) {
-                    debug('Error reading file for reindex:', doc.file, err.message);
-                }
-
-                if (content) {
-                    const filePath = doc.file;
-                    const fileId = sha256(filePath);
-
-                    const codeChunks = chunkCode(content, filePath, fileId);
-
-                    for (const chunk of codeChunks) {
-                        const embedding = await generateEmbedding(chunk.content);
-                        chunk.vector = embedding;
-                    }
-
-                    if (codeChunks.length > 0) {
-                        await addCodeChunks(codeChunks);
-                    }
-
-                    const astNodes = await parseFile(content, filePath, fileId);
-
-                    for (const node of astNodes) {
-                        const searchText = createSearchableText(node);
-                        const embedding = await generateEmbedding(searchText);
-                        node.vector = embedding;
-                    }
-
-                    if (astNodes.length > 0) {
-                        await addAstNodes(astNodes);
-                    }
-
-                    processed++;
-                }
-            } catch (err) {
-                debug('Error reindexing file:', doc.file, err);
-                errors++;
-            }
+    if (db) {
+        try {
+            const allDocs = await db.allDocs({ include_docs: true });
+            filesToIndex = allDocs.rows
+                .filter(row => row.doc.type === 'file' && row.doc.file && isSupportedFile(row.doc.file))
+                .map(row => row.doc.file);
+        } catch (err) {
+            debug('Error reading from DB for reindex, falling back to filesystem:', err.message);
         }
     }
 
-    debug(`Reindex complete: ${processed} files processed, ${errors} errors`);
+    if (filesToIndex.length === 0 && pwd) {
+        debug('No files in DB — falling back to filesystem walk');
+        filesToIndex = walkDirectory(pwd, pwd);
+    }
+
+    let processed = 0;
+    let errors = 0;
+
+    for (const filePath of filesToIndex) {
+        try {
+            let content = '';
+            try {
+                const resolvedPath = path.resolve(pwd || '.', filePath);
+                if (fs.existsSync(resolvedPath)) {
+                    content = fs.readFileSync(resolvedPath, 'utf-8');
+                }
+            } catch (err) {
+                debug('Error reading file for reindex:', filePath, err.message);
+            }
+
+            if (content) {
+                const fileId = sha256(filePath);
+
+                const codeChunks = chunkCode(content, filePath, fileId);
+
+                for (const chunk of codeChunks) {
+                    const embedding = await generateEmbedding(chunk.content);
+                    chunk.vector = embedding;
+                }
+
+                if (codeChunks.length > 0) {
+                    await addCodeChunks(codeChunks);
+                }
+
+                const astNodes = await parseFile(content, filePath, fileId);
+
+                for (const node of astNodes) {
+                    const searchText = createSearchableText(node);
+                    const embedding = await generateEmbedding(searchText);
+                    node.vector = embedding;
+                }
+
+                if (astNodes.length > 0) {
+                    await addAstNodes(astNodes);
+                }
+
+                processed++;
+            }
+        } catch (err) {
+            debug('Error reindexing file:', filePath, err);
+            errors++;
+        }
+    }
+
+    console.log(`[OVCS] Reindex complete: ${processed} files processed${errors > 0 ? `, ${errors} errors` : ''}`);
     return { processed, errors };
 }
 
@@ -213,6 +294,7 @@ export {
     initVectorSync,
     syncFileToVectorDB,
     removeFileFromVectorDB,
+    indexExistingFiles,
     reindexAll,
     isVectorSyncInitialized
 };
