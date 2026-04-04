@@ -1,23 +1,39 @@
 import { debug } from './debug.js';
 import { getLanguageFromPath, sha256 } from './chunker.js';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 
 let Parser = null;
-let JavaScript = null;
-let TypeScript = null;
 let treeSitterAvailable = false;
+let initPromise = null;
 
-// Try to load tree-sitter (native module that may fail to compile)
-try {
-    const parserModule = await import('tree-sitter');
-    Parser = parserModule.default;
-    const jsModule = await import('tree-sitter-javascript');
-    JavaScript = jsModule.default;
-    const tsModule = await import('tree-sitter-typescript');
-    TypeScript = tsModule.default;
-    treeSitterAvailable = true;
-    debug('Tree-sitter loaded successfully');
-} catch (err) {
-    debug('Tree-sitter not available (native module may need compilation):', err.message);
+const languages = {};
+
+async function initTreeSitter() {
+    try {
+        const TreeSitter = (await import('web-tree-sitter')).default;
+        await TreeSitter.init();
+        Parser = TreeSitter;
+
+        const require = createRequire(import.meta.url);
+        const wasmsDir = path.dirname(require.resolve('tree-sitter-wasms/out/tree-sitter-javascript.wasm'));
+
+        languages.javascript = await TreeSitter.Language.load(path.join(wasmsDir, 'tree-sitter-javascript.wasm'));
+        languages.typescript = await TreeSitter.Language.load(path.join(wasmsDir, 'tree-sitter-typescript.wasm'));
+
+        treeSitterAvailable = true;
+        debug('Tree-sitter (WASM) loaded successfully');
+    } catch (err) {
+        debug('Tree-sitter not available:', err.message);
+    }
+}
+
+// Initialize once, lazily
+function ensureInitialized() {
+    if (!initPromise) {
+        initPromise = initTreeSitter();
+    }
+    return initPromise;
 }
 
 const parsers = {};
@@ -36,10 +52,10 @@ function getParser(language) {
 
         switch (language) {
             case 'javascript':
-                parser.setLanguage(JavaScript);
+                parser.setLanguage(languages.javascript);
                 break;
             case 'typescript':
-                parser.setLanguage(TypeScript.typescript);
+                parser.setLanguage(languages.typescript);
                 break;
             default:
                 debug('Unsupported language for AST parsing:', language);
@@ -54,7 +70,9 @@ function getParser(language) {
     }
 }
 
-function parseFile(content, filePath, fileId) {
+async function parseFile(content, filePath, fileId) {
+    await ensureInitialized();
+
     const language = getLanguageFromPath(filePath);
     if (!language) {
         debug('Cannot determine language for:', filePath);
@@ -88,8 +106,8 @@ function extractNodes(rootNode, filePath, fileId, language, content) {
             parentId = nodeInfo.id;
         }
 
-        for (const child of node.children) {
-            traverse(child, parentId);
+        for (let i = 0; i < node.childCount; i++) {
+            traverse(node.child(i), parentId);
         }
     }
 
@@ -155,11 +173,6 @@ function categorizeNodeType(treeSitterType, language) {
         'export_default_declaration'
     ];
 
-    const variableTypes = [
-        'variable_declaration',
-        'lexical_declaration'
-    ];
-
     if (functionTypes.includes(treeSitterType)) return 'function';
     if (classTypes.includes(treeSitterType)) return 'class';
     if (importTypes.includes(treeSitterType)) return 'import';
@@ -168,18 +181,22 @@ function categorizeNodeType(treeSitterType, language) {
     return null;
 }
 
-// Helper to find child node by type
+// Helper to find child node by type (WASM API uses namedChild/namedChildCount)
 function findChildByType(node, type) {
-    if (!node.namedChildren) return null;
-    return node.namedChildren.find(child => child.type === type) || null;
+    for (let i = 0; i < node.namedChildCount; i++) {
+        const child = node.namedChild(i);
+        if (child.type === type) return child;
+    }
+    return null;
 }
 
 // Helper to find first identifier child
 function findIdentifier(node) {
-    if (!node.namedChildren) return null;
-    return node.namedChildren.find(child =>
-        child.type === 'identifier' || child.type === 'property_identifier'
-    ) || null;
+    for (let i = 0; i < node.namedChildCount; i++) {
+        const child = node.namedChild(i);
+        if (child.type === 'identifier' || child.type === 'property_identifier') return child;
+    }
+    return null;
 }
 
 function extractNodeName(node, language) {
@@ -249,16 +266,13 @@ function extractDependencies(node, language) {
             dependencies.push(n.text);
         }
         if (n.type === 'call_expression') {
-            // Get first child which is typically the function being called
-            const funcNode = n.namedChildren?.[0];
+            const funcNode = n.namedChildCount > 0 ? n.namedChild(0) : null;
             if (funcNode) {
                 dependencies.push(funcNode.text);
             }
         }
-        if (n.children) {
-            for (const child of n.children) {
-                findIdentifiers(child);
-            }
+        for (let i = 0; i < n.childCount; i++) {
+            findIdentifiers(n.child(i));
         }
     }
 

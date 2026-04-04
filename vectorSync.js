@@ -110,7 +110,7 @@ async function processFileSync(data, metadata) {
         await addCodeChunks(codeChunks);
     }
 
-    const astNodes = parseFile(content, filePath, fileId);
+    const astNodes = await parseFile(content, filePath, fileId);
 
     for (const node of astNodes) {
         try {
@@ -180,7 +180,7 @@ async function reindexAll(db) {
                         await addCodeChunks(codeChunks);
                     }
 
-                    const astNodes = parseFile(content, filePath, fileId);
+                    const astNodes = await parseFile(content, filePath, fileId);
 
                     for (const node of astNodes) {
                         const searchText = createSearchableText(node);
