@@ -1,3 +1,9 @@
+// Manually increment these when making incompatible changes to stored data.
+// VECTOR_SCHEMA_VERSION: covers LanceDB tables (code_chunks, ast_nodes, call_edges)
+// RXDB_SCHEMA_VERSION: covers RxDB file metadata (rxdb-data.json)
+const VECTOR_SCHEMA_VERSION = 2;
+const RXDB_SCHEMA_VERSION = 1;
+
 const OVCSSETTINGS = {
     ROOT_DIR: '.ovcs',
     OVCS_WEB_PORT: process.env.OVCS_WEB_PORT || 3001,
@@ -31,4 +37,4 @@ const OVCSSETTINGS = {
         '.tsx': 'typescript'
     }
 }
-export {OVCSSETTINGS};
+export { OVCSSETTINGS, VECTOR_SCHEMA_VERSION, RXDB_SCHEMA_VERSION };

@@ -1,7 +1,8 @@
-import { initVectorStore, addCodeChunks, addAstNodes, removeFileVectors, clearAllVectors, isInitialized, getStats } from './vectorStore.js';
+import { initVectorStore, addCodeChunks, addAstNodes, addCallEdges, removeCallEdges, loadAllCallEdges, removeFileVectors, clearAllVectors, isInitialized, getStats } from './vectorStore.js';
 import { initEmbeddings, generateEmbedding, isModelLoaded } from './embeddings.js';
 import { chunkCode, isSupportedFile, sha256 } from './chunker.js';
-import { parseFile, createSearchableText } from './astParser.js';
+import { parseFile, parseFileWithCallGraph, createSearchableText } from './astParser.js';
+import { callGraph } from './callGraph.js';
 import { OVCSSETTINGS } from './const.js';
 import { debug } from './debug.js';
 import fs from 'node:fs';
@@ -23,8 +24,12 @@ async function initVectorSync(workingDir, ignorePatterns = []) {
         await initEmbeddings(pwd);
         initialized = true;
 
+        // Load call graph from persisted edges
+        await loadCallGraphFromDB();
+
         const stats = await getStats();
-        console.log(`[OVCS] Search engine ready (${stats.code_chunks} chunks, ${stats.ast_nodes} AST nodes in index)`);
+        const graphStats = callGraph.getStats();
+        console.log(`[OVCS] Search engine ready (${stats.code_chunks} chunks, ${stats.ast_nodes} AST nodes, ${graphStats.edges} call edges in index)`);
     } catch (err) {
         debug('Error initializing vector sync:', err);
         initialized = false;
@@ -83,6 +88,8 @@ async function processFileSync(data, metadata) {
     const fileId = sha256(filePath);
 
     await removeFileVectors(fileId);
+    await removeCallEdges(fileId);
+    callGraph.removeEdgesForFile(fileId);
 
     // Read content from disk
     let content = '';
@@ -116,7 +123,10 @@ async function processFileSync(data, metadata) {
         await addCodeChunks(codeChunks);
     }
 
-    const astNodes = await parseFile(content, filePath, fileId);
+    // Parse file with call graph support
+    const { astNodes, callEdges } = await parseFileWithCallGraph(
+        content, filePath, fileId, pwd, resolveSymbolInIndex
+    );
 
     for (const node of astNodes) {
         try {
@@ -133,12 +143,117 @@ async function processFileSync(data, metadata) {
         await addAstNodes(astNodes);
     }
 
-    debug(`Synced file to vector DB: ${filePath} (${codeChunks.length} chunks, ${astNodes.length} AST nodes)`);
+    // Register AST nodes in the call graph
+    for (const node of astNodes) {
+        if (node.node_type === 'function' || node.node_type === 'class') {
+            callGraph.addNode(node.id, node.node_name, node.file_path, node.node_type);
+        }
+    }
+
+    // Generate embeddings for call edges and persist
+    for (const edge of callEdges) {
+        try {
+            const edgeText = `${edge.caller_name} calls ${edge.callee_name}`;
+            edge.vector = await generateEmbedding(edgeText);
+        } catch (err) {
+            debug('Error generating embedding for call edge:', err);
+            edge.vector = new Array(384).fill(0);
+        }
+    }
+
+    if (callEdges.length > 0) {
+        await addCallEdges(callEdges);
+
+        // Update in-memory graph
+        for (const edge of callEdges) {
+            callGraph.addEdge(edge.id, edge.caller_id, edge.callee_id, edge.file_id, {
+                callerName: edge.caller_name,
+                calleeName: edge.callee_name,
+                callLine: edge.call_line,
+                callType: edge.call_type,
+                resolved: edge.resolved === 1
+            });
+            // Register unresolved callees so they show human-readable names
+            if (edge.resolved === 0 && edge.callee_name) {
+                callGraph.addNode(edge.callee_id, edge.callee_name, edge.callee_file || '', 'external', edge.source_module || '');
+            }
+        }
+    }
+
+    debug(`Synced file to vector DB: ${filePath} (${codeChunks.length} chunks, ${astNodes.length} AST nodes, ${callEdges.length} call edges)`);
+}
+
+async function loadCallGraphFromDB() {
+    try {
+        const edges = await loadAllCallEdges();
+        if (edges.length === 0) {
+            debug('No call edges to load into graph');
+            return;
+        }
+
+        callGraph.clear();
+        for (const edge of edges) {
+            callGraph.addEdge(edge.id, edge.caller_id, edge.callee_id, edge.file_id, {
+                callerName: edge.caller_name,
+                calleeName: edge.callee_name,
+                callLine: edge.call_line,
+                callType: edge.call_type,
+                resolved: edge.resolved === 1
+            });
+            // Add node info for both caller and callee
+            if (edge.caller_name) {
+                callGraph.addNode(edge.caller_id, edge.caller_name, edge.caller_file, 'function');
+            }
+            if (edge.callee_name) {
+                callGraph.addNode(edge.callee_id, edge.callee_name, edge.callee_file || '', edge.resolved === 1 ? 'function' : 'external', edge.source_module || '');
+            }
+        }
+
+        const stats = callGraph.getStats();
+        debug(`Loaded call graph: ${stats.nodes} nodes, ${stats.edges} edges`);
+    } catch (err) {
+        debug('Error loading call graph from DB:', err);
+    }
+}
+
+/**
+ * Resolve a symbol name within the existing AST index.
+ * Used for cross-file call resolution during edge building.
+ */
+async function resolveSymbolInIndex(name, sourceFile) {
+    if (!sourceFile) return null;
+
+    try {
+        // Generate embedding for the function name and search AST nodes
+        const queryVector = await generateEmbedding(name);
+        const { searchAstNodes } = await import('./vectorStore.js');
+        const results = await searchAstNodes(queryVector, 20, 'function');
+
+        // Find an exact name match in the target file
+        for (const r of results) {
+            if (r.node_name === name && r.file_path === sourceFile) {
+                return { id: r.id, name: r.node_name, file_path: r.file_path };
+            }
+        }
+
+        // Fall back to exact name match in any file if source file doesn't match
+        for (const r of results) {
+            if (r.node_name === name) {
+                return { id: r.id, name: r.node_name, file_path: r.file_path };
+            }
+        }
+    } catch (err) {
+        debug('Error resolving symbol:', name, err.message);
+    }
+
+    return null;
 }
 
 async function processFileDelete(fileId) {
     const hashedId = sha256(fileId);
     await removeFileVectors(hashedId);
+    await removeCallEdges(hashedId);
+    callGraph.removeEdgesForFile(hashedId);
     debug('Removed file from vector DB:', fileId);
 }
 
@@ -214,6 +329,7 @@ async function reindexAll(db) {
     console.log('[OVCS] Starting full reindex...');
 
     await clearAllVectors();
+    callGraph.clear();
 
     // Try RxDB collection first, fall back to filesystem walk
     let filesToIndex = [];
@@ -297,5 +413,6 @@ export {
     removeFileFromVectorDB,
     indexExistingFiles,
     reindexAll,
-    isVectorSyncInitialized
+    isVectorSyncInitialized,
+    callGraph
 };

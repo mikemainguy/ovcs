@@ -73,6 +73,7 @@
         <span class="brand">OVCS</span>
         <a href="/" class="active">Dashboard</a>
         <a href="/diff.html">Diff Viewer</a>
+        <a href="/file.html">File Viewer</a>
         <a href="/data">Data (JSON)</a>
         <a href="/presence">Presence (JSON)</a>
         <a href="/sync-status">Sync Status (JSON)</a>
@@ -188,7 +189,7 @@ ovcs --p2p --dir /path        # P2P + custom directory</pre>
                         </div>
                         <div class="node-host">${n.hostname || 'unknown'}</div>
                         ${n.activeFiles && n.activeFiles.length > 0
-                            ? '<div class="active-files">Editing: ' + n.activeFiles.slice(0, 5).map(f => '<code>' + f + '</code>').join(', ') + (n.activeFiles.length > 5 ? ' +' + (n.activeFiles.length - 5) + ' more' : '') + '</div>'
+                            ? '<div class="active-files">Editing: ' + n.activeFiles.slice(0, 5).map(f => '<a href="/file.html?path=' + encodeURIComponent(f) + '" style="text-decoration:none;" title="Open file viewer"><code>' + f + '</code></a>').join(', ') + (n.activeFiles.length > 5 ? ' +' + (n.activeFiles.length - 5) + ' more' : '') + '</div>'
                             : ''}
                     </div>
                     <div class="last-seen">${n.lastSeen ? timeAgo(n.lastSeen) : ''}</div>
@@ -242,7 +243,7 @@ ovcs --p2p --dir /path        # P2P + custom directory</pre>
                     <div class="warning-item">
                         <span class="warning-severity ${sevClass}">${w.severity.toFixed(1)}</span>
                         <div>
-                            <div class="warning-file">${w.fileId}</div>
+                            <div class="warning-file"><a href="/file.html?path=${encodeURIComponent(w.fileId)}" style="color:inherit;text-decoration:none;border-bottom:1px dashed #666;" title="Open file viewer">${w.fileId}</a></div>
                             <div class="warning-users">Edited by: ${users}${branchInfo}</div>
                         </div>
                     </div>`;
@@ -292,7 +293,7 @@ ovcs --p2p --dir /path        # P2P + custom directory</pre>
                             ? `${r.node_type}: ${r.node_name} ${r.signature || ''} (${r.language}, lines ${r.start_line}-${r.end_line})`
                             : `${r.language || 'unknown'}, lines ${r.start_line}-${r.end_line}`;
                         const content = r.content ? `<div class="sr-content">${escapeHtml(r.content.substring(0, 500))}</div>` : '';
-                        html += `<div class="search-result-item">${score}<div class="sr-file">${r.file_path}</div><div class="sr-meta">${meta}</div>${content}</div>`;
+                        html += `<div class="search-result-item">${score}<div class="sr-file"><a href="/file.html?path=${encodeURIComponent(r.file_path)}" style="color:inherit;text-decoration:none;border-bottom:1px dashed #999;" title="Open file viewer">${r.file_path}</a></div><div class="sr-meta">${meta}</div>${content}</div>`;
                     });
                 }
                 panel.innerHTML = html;

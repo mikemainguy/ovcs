@@ -7,9 +7,11 @@ import fs from 'node:fs';
 let db = null;
 let codeChunksTable = null;
 let astNodesTable = null;
+let callEdgesTable = null;
 
 const CODE_CHUNKS_TABLE = 'code_chunks';
 const AST_NODES_TABLE = 'ast_nodes';
+const CALL_EDGES_TABLE = 'call_edges';
 
 async function initVectorStore(pwd) {
     const vectorDbPath = path.join(pwd, OVCSSETTINGS.ROOT_DIR, OVCSSETTINGS.VECTOR_DB_DIR);
@@ -71,6 +73,30 @@ async function ensureTables() {
     } else {
         astNodesTable = await db.openTable(AST_NODES_TABLE);
     }
+
+    if (!tables.includes(CALL_EDGES_TABLE)) {
+        const emptyCallEdge = {
+            id: '_init_',
+            caller_id: '',
+            callee_id: '',
+            caller_name: '',
+            callee_name: '',
+            caller_file: '',
+            callee_file: '',
+            call_line: 0,
+            call_type: '',
+            source_module: '',
+            file_id: '',
+            resolved: 0,
+            vector: new Array(OVCSSETTINGS.EMBEDDING_DIMENSIONS).fill(0),
+            updated_at: new Date().toISOString()
+        };
+        callEdgesTable = await db.createTable(CALL_EDGES_TABLE, [emptyCallEdge]);
+        await callEdgesTable.delete('id = "_init_"');
+        debug('Created call_edges table');
+    } else {
+        callEdgesTable = await db.openTable(CALL_EDGES_TABLE);
+    }
 }
 
 async function addCodeChunks(chunks) {
@@ -83,6 +109,59 @@ async function addAstNodes(nodes) {
     if (!astNodesTable || nodes.length === 0) return;
     await astNodesTable.add(nodes);
     debug(`Added ${nodes.length} AST nodes`);
+}
+
+async function addCallEdges(edges) {
+    if (!callEdgesTable || edges.length === 0) return;
+    await callEdgesTable.add(edges);
+    debug(`Added ${edges.length} call edges`);
+}
+
+async function removeCallEdges(fileId) {
+    if (!callEdgesTable) return;
+    try {
+        await callEdgesTable.delete(`file_id = "${fileId}"`);
+        debug(`Removed call edges for file: ${fileId}`);
+    } catch (err) {
+        debug('Error removing call edges:', err);
+    }
+}
+
+async function loadAllCallEdges() {
+    if (!callEdgesTable) return [];
+    try {
+        const count = await callEdgesTable.countRows();
+        if (count === 0) return [];
+        // Use a zero vector search with high limit to load all edges
+        const zeroVector = new Array(OVCSSETTINGS.EMBEDDING_DIMENSIONS).fill(0);
+        const results = await callEdgesTable
+            .vectorSearch(zeroVector)
+            .limit(count + 100)
+            .toArray();
+        return results;
+    } catch (err) {
+        debug('Error loading call edges:', err);
+        return [];
+    }
+}
+
+async function getAstNodesByFile(fileId, nodeType = null) {
+    if (!astNodesTable) return [];
+    try {
+        const count = await astNodesTable.countRows();
+        if (count === 0) return [];
+        const zeroVector = new Array(OVCSSETTINGS.EMBEDDING_DIMENSIONS).fill(0);
+        let query = astNodesTable.vectorSearch(zeroVector).limit(count + 100);
+        let condition = `file_id = "${fileId}"`;
+        if (nodeType) {
+            condition += ` AND node_type = "${nodeType}"`;
+        }
+        query = query.where(condition);
+        return await query.toArray();
+    } catch (err) {
+        debug('Error getting AST nodes by file:', err);
+        return [];
+    }
 }
 
 async function removeFileVectors(fileId) {
@@ -161,6 +240,7 @@ async function getStats() {
     const stats = {
         code_chunks: 0,
         ast_nodes: 0,
+        call_edges: 0,
         tables: []
     };
 
@@ -178,6 +258,11 @@ async function getStats() {
         stats.ast_nodes = countResult;
     }
 
+    if (callEdgesTable) {
+        const countResult = await callEdgesTable.countRows();
+        stats.call_edges = countResult;
+    }
+
     return stats;
 }
 
@@ -187,6 +272,9 @@ async function clearAllVectors() {
     }
     if (astNodesTable) {
         await astNodesTable.delete('id IS NOT NULL');
+    }
+    if (callEdgesTable) {
+        await callEdgesTable.delete('id IS NOT NULL');
     }
     debug('Cleared all vectors');
 }
@@ -199,6 +287,10 @@ export {
     initVectorStore,
     addCodeChunks,
     addAstNodes,
+    addCallEdges,
+    removeCallEdges,
+    loadAllCallEdges,
+    getAstNodesByFile,
     removeFileVectors,
     searchCodeChunks,
     searchAstNodes,

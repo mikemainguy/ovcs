@@ -5,6 +5,7 @@ import {fileURLToPath} from "node:url";
 import {dirname, join} from "node:path";
 import {watchDir} from "./watchdir.js";
 import {setupMetadata, configureTls} from "./setupMetadata.js";
+import {checkSchemaVersions, writeSchemaState, clearVectorData, clearRxdbData} from "./schemaVersion.js";
 import {debug} from "./debug.js";
 import {OVCSSETTINGS} from "./const.js";
 import {startServer} from "./server/index.js";
@@ -69,6 +70,50 @@ if (isServerMode) {
     const pwd = process.cwd();
     const port = getPort(OVCSSETTINGS.OVCS_WEB_PORT);
 
+    async function startClient(metadata) {
+        configureTls(metadata);
+        const baseDir = getArg('--dir', metadata.baseDirectory || '.');
+        await watchDir(metadata, pwd, port, { p2p: isP2PMode, baseDirectory: baseDir });
+    }
+
+    function handleSchemaUpgrade(metadata, versionCheck, rl) {
+        return new Promise((resolve) => {
+            const changes = [];
+            if (versionCheck.needsVectorReindex) {
+                changes.push(`  Vector/Search index: v${versionCheck.storedVectorVersion} -> v${versionCheck.currentVectorVersion} (reindex required)`);
+            }
+            if (versionCheck.needsRxdbRebuild) {
+                changes.push(`  File metadata (RxDB): v${versionCheck.storedRxdbVersion} -> v${versionCheck.currentRxdbVersion} (rebuild required)`);
+            }
+
+            console.log('');
+            console.log('[OVCS] Schema upgrade detected:');
+            changes.forEach(c => console.log(c));
+            console.log('');
+            console.log('This will clear outdated data and rebuild it from your local files.');
+            console.log('The rebuild will run in the background after startup.');
+
+            rl.question('\nProceed with upgrade? [Y/n]: ', (ans) => {
+                const answer = ans.trim().toLowerCase();
+                if (answer === '' || answer === 'y' || answer === 'yes') {
+                    if (versionCheck.needsVectorReindex) {
+                        clearVectorData(pwd);
+                        console.log('[OVCS] Vector index cleared — will rebuild on startup.');
+                    }
+                    if (versionCheck.needsRxdbRebuild) {
+                        clearRxdbData(pwd);
+                        console.log('[OVCS] File metadata cleared — will rebuild from file scan.');
+                    }
+                    writeSchemaState(pwd);
+                    resolve(true);
+                } else {
+                    console.log('[OVCS] Upgrade skipped. Running with existing data (may cause errors).');
+                    resolve(false);
+                }
+            });
+        });
+    }
+
     async function checkInit() {
         const exists = existsSync(`${pwd}/${OVCSSETTINGS.ROOT_DIR}`);
         debug(exists);
@@ -76,12 +121,11 @@ if (isServerMode) {
             debug('.ovcs directory not found, initialize?');
             rl.question('Press [Y] to continue: ', async ans => {
                 if (ans === 'y') {
-                    rl.close();
                     const metadata = setupMetadata(true, pwd);
-                    configureTls(metadata);
+                    writeSchemaState(pwd);
+                    rl.close();
                     debug(metadata);
-                    const baseDir = getArg('--dir', metadata.baseDirectory || '.');
-                    await watchDir(metadata, pwd, port, { p2p: isP2PMode, baseDirectory: baseDir });
+                    await startClient(metadata);
                 } else {
                     console.error('ovc not initialized');
                     rl.close();
@@ -90,9 +134,20 @@ if (isServerMode) {
             });
         } else {
             const metadata = setupMetadata(false, pwd);
-            configureTls(metadata);
-            const baseDir = getArg('--dir', metadata.baseDirectory || '.');
-            await watchDir(metadata, pwd, port, { p2p: isP2PMode, baseDirectory: baseDir });
+            const versionCheck = checkSchemaVersions(pwd);
+            debug('Schema version check:', versionCheck);
+
+            if (versionCheck.needsVectorReindex || versionCheck.needsRxdbRebuild) {
+                await handleSchemaUpgrade(metadata, versionCheck, rl);
+                rl.close();
+                await startClient(metadata);
+            } else {
+                if (versionCheck.isFirstRun) {
+                    writeSchemaState(pwd);
+                }
+                rl.close();
+                await startClient(metadata);
+            }
         }
     }
     checkInit();

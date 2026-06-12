@@ -1,0 +1,132 @@
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, sans-serif;
+  margin: 0; background: #f5f5f5;
+}
+nav {
+  background: #1e293b; color: #fff;
+  padding: 12px 20px; display: flex;
+  align-items: center; gap: 24px;
+}
+nav .brand { font-weight: 700; font-size: 1.1em; }
+nav a {
+  color: #94a3b8; text-decoration: none;
+  font-size: 0.9em; padding: 4px 8px;
+  border-radius: 4px;
+}
+nav a:hover, nav a.active {
+  color: #fff; background: #334155;
+}
+.container {
+  padding: 20px; max-width: 1200px;
+  margin: 0 auto;
+}
+h1 { margin: 0 0 16px 0; color: #333; }
+.summary-bar {
+  display: flex; gap: 12px;
+  flex-wrap: wrap; margin-bottom: 16px;
+}
+.summary-chip {
+  padding: 8px 16px; border-radius: 8px;
+  font-size: 0.9em; font-weight: 600;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 0.15s;
+}
+.summary-chip:hover { opacity: 0.85; }
+.summary-chip.active { border-color: #333; }
+.chip-all {
+  background: #e2e8f0; color: #334155;
+}
+.chip-conflict {
+  background: #fff3cd; color: #856404;
+}
+.chip-missing-local {
+  background: #f8d7da; color: #721c24;
+}
+.chip-missing-remote {
+  background: #fff3e0; color: #e65100;
+}
+.chip-count {
+  font-size: 1.1em; margin-right: 4px;
+}
+.chip-mergeable {
+  background: #d4edda; color: #155724;
+}
+.pagination {
+  display: flex; align-items: center;
+  justify-content: center; gap: 8px;
+  margin: 16px 0;
+}
+.pagination button {
+  padding: 6px 14px; border: 1px solid #ddd;
+  background: #fff; border-radius: 4px;
+  cursor: pointer; font-size: 0.9em;
+}
+.pagination button:disabled {
+  opacity: 0.4; cursor: default;
+}
+.pagination button:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+.pagination .page-info {
+  font-size: 0.9em; color: #666;
+}
+.page-size { font-size: 0.85em; color: #666; }
+.page-size select {
+  margin-left: 4px; padding: 2px 4px;
+}
+.orientation-bar {
+  display: flex; align-items: center;
+  gap: 8px; margin-bottom: 12px;
+  font-size: 0.9em; color: #555;
+}
+.orient-btn {
+  padding: 6px 14px; border: 1px solid #ddd;
+  background: #fff; border-radius: 4px;
+  cursor: pointer; font-size: 0.85em;
+  font-weight: 600;
+}
+.orient-btn.active {
+  background: #1e293b; color: #fff;
+  border-color: #1e293b;
+}
+.orient-btn:hover:not(.active) {
+  background: #f0f0f0;
+}
+.no-conflicts {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724; padding: 20px;
+  border-radius: 8px; text-align: center;
+}
+.error {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24; padding: 15px;
+  border-radius: 8px;
+}
+.loading {
+  text-align: center; padding: 40px;
+  color: #666;
+}
+.overlap-banner {
+  background: #fff3cd;
+  border: 1px solid #f59e0b;
+  border-radius: 4px; padding: 6px 12px;
+  margin-bottom: 8px; font-size: 0.85em;
+  color: #92400e; display: flex;
+  align-items: center; gap: 8px;
+}
+.overlap-banner .overlap-icon {
+  font-size: 1.1em;
+}
+.overlap-banner .overlap-sev {
+  font-weight: 700; padding: 1px 6px;
+  border-radius: 3px; font-size: 0.8em;
+  color: #fff;
+}
+.overlap-sev-low { background: #f59e0b; }
+.overlap-sev-medium { background: #f97316; }
+.overlap-sev-high { background: #dc2626; }

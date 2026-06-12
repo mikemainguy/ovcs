@@ -194,15 +194,100 @@ function web(port, metadata = {}, options = {}) {
         res.json({ total, page, limit, pages, summary, items });
     });
 
-    app.get("/", async (req, res) => {
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        const file = fs.readFileSync(projectRoot + '/web/index.html');
+    // Serve Vite build or fall back to old web/
+    const distDir = path.join(
+      projectRoot, 'web-dist'
+    );
+    if (fs.existsSync(distDir)) {
+      app.use(express.static(distDir));
+      app.get('*', (req, res) => {
+        res.sendFile(
+          path.join(distDir, 'index.html')
+        );
+      });
+    } else {
+      app.get("/", async (req, res) => {
+        res.setHeader('Cache-Control',
+          'no-cache, no-store, must-revalidate');
+        const file = fs.readFileSync(
+          projectRoot + '/web/index.html'
+        );
         res.send(file.toString('utf-8'));
-    });
-    app.get("/diff.html", (req, res) => {
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        const file = fs.readFileSync(projectRoot + '/web/diff.html');
+      });
+      app.use(express.static(
+        path.join(projectRoot, 'web')
+      ));
+      app.get("/diff.html", (req, res) => {
+        res.setHeader('Cache-Control',
+          'no-cache, no-store, must-revalidate');
+        const file = fs.readFileSync(
+          projectRoot + '/web/diff.html'
+        );
         res.send(file.toString('utf-8'));
+      });
+      app.get("/file.html", (req, res) => {
+        res.setHeader('Cache-Control',
+          'no-cache, no-store, must-revalidate');
+        const file = fs.readFileSync(
+          projectRoot + '/web/file.html'
+        );
+        res.send(file.toString('utf-8'));
+      });
+    }
+
+    // File info API for the file viewer page
+    app.get("/file-info/:filePath", async (req, res) => {
+        try {
+            const filePath = decodeURIComponent(req.params.filePath);
+            const localClientId = metadata.clientId || metadata.email;
+
+            // Find the document by file path
+            const docs = await filesCollection.find().exec();
+            const doc = docs.find(d => {
+                const data = d.toJSON();
+                return data.file === filePath;
+            });
+
+            if (!doc) {
+                return res.status(404).json({ error: 'File not found in index' });
+            }
+
+            const data = doc.toJSON();
+            const revisions = data.revisions || {};
+            const revKeys = Object.keys(revisions);
+
+            // Compute conflicts: multiple different hashes
+            const conflicts = [];
+            const hashes = new Set();
+            for (const key of revKeys) {
+                const rev = revisions[key];
+                if (rev.hash) hashes.add(rev.hash);
+                conflicts.push({
+                    key,
+                    email: rev.email || key,
+                    hash: rev.hash || '',
+                    updated: rev.updated || null,
+                    commitHash: rev.commitHash || null,
+                    isLocal: key === localClientId || rev.email === metadata.email
+                });
+            }
+
+            const hasConflict = hashes.size > 1;
+
+            res.json({
+                filePath: data.file,
+                fileId: data.id,
+                type: data.type,
+                hash: data.hash,
+                hasConflict,
+                conflicts: hasConflict ? conflicts : [],
+                revisions,
+                revisionCount: revKeys.length
+            });
+        } catch (err) {
+            debug('File info error:', err);
+            res.status(500).json({ error: 'Failed to get file info', message: err.message });
+        }
     });
     app.get("/ready", (req, res) => {
         res.json(getScanStatus());

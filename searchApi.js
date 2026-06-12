@@ -1,6 +1,6 @@
-import { searchCodeChunks, searchAstNodes, searchFunctions, findSimilarFiles, getStats, isInitialized } from './vectorStore.js';
+import { searchCodeChunks, searchAstNodes, searchFunctions, findSimilarFiles, getStats, isInitialized, getAstNodesByFile } from './vectorStore.js';
 import { generateEmbedding, isModelLoaded } from './embeddings.js';
-import { reindexAll, isVectorSyncInitialized } from './vectorSync.js';
+import { reindexAll, isVectorSyncInitialized, callGraph } from './vectorSync.js';
 import { sha256 } from './chunker.js';
 import { OVCSSETTINGS } from './const.js';
 import { debug } from './debug.js';
@@ -173,6 +173,173 @@ function setupSearchRoutes(app, db) {
         } catch (err) {
             debug('Stats error:', err);
             res.status(500).json({ error: 'Failed to get stats', message: err.message });
+        }
+    });
+
+    // Call graph endpoints
+    app.get('/search/callers/:functionName', async (req, res) => {
+        try {
+            const { functionName } = req.params;
+            const { depth = 1, file } = req.query;
+            const maxDepth = parseInt(depth, 10);
+
+            if (!isVectorSyncInitialized()) {
+                return res.status(503).json({ error: 'Vector search is not initialized' });
+            }
+
+            // Find the function node(s) by name
+            let matches = callGraph.findNodeByName(functionName);
+            if (file) {
+                matches = matches.filter(m => m.file === file);
+            }
+
+            if (matches.length === 0) {
+                return res.status(404).json({ error: `Function "${functionName}" not found in call graph` });
+            }
+
+            const results = [];
+            for (const match of matches) {
+                const callers = maxDepth === 1
+                    ? [...callGraph.getDirectCallers(match.id)].map(id => {
+                        const info = callGraph.nodeInfo.get(id) || { name: id, file: '', type: '' };
+                        return { id, depth: 1, ...info };
+                    })
+                    : callGraph.getTransitiveCallers(match.id, maxDepth);
+
+                results.push({
+                    function: match.name,
+                    file: match.file,
+                    id: match.id,
+                    callers
+                });
+            }
+
+            res.json({ query: functionName, depth: maxDepth, results });
+        } catch (err) {
+            debug('Callers search error:', err);
+            res.status(500).json({ error: 'Callers search failed', message: err.message });
+        }
+    });
+
+    app.get('/search/callees/:functionName', async (req, res) => {
+        try {
+            const { functionName } = req.params;
+            const { depth = 1, file } = req.query;
+            const maxDepth = parseInt(depth, 10);
+
+            if (!isVectorSyncInitialized()) {
+                return res.status(503).json({ error: 'Vector search is not initialized' });
+            }
+
+            let matches = callGraph.findNodeByName(functionName);
+            if (file) {
+                matches = matches.filter(m => m.file === file);
+            }
+
+            if (matches.length === 0) {
+                return res.status(404).json({ error: `Function "${functionName}" not found in call graph` });
+            }
+
+            const results = [];
+            for (const match of matches) {
+                const callees = maxDepth === 1
+                    ? [...callGraph.getDirectCallees(match.id)].map(id => {
+                        const info = callGraph.nodeInfo.get(id) || { name: id, file: '', type: '' };
+                        return { id, depth: 1, ...info };
+                    })
+                    : callGraph.getTransitiveCallees(match.id, maxDepth);
+
+                results.push({
+                    function: match.name,
+                    file: match.file,
+                    id: match.id,
+                    callees
+                });
+            }
+
+            res.json({ query: functionName, depth: maxDepth, results });
+        } catch (err) {
+            debug('Callees search error:', err);
+            res.status(500).json({ error: 'Callees search failed', message: err.message });
+        }
+    });
+
+    app.get('/search/callpath', async (req, res) => {
+        try {
+            const { from, to, maxDepth = 10 } = req.query;
+
+            if (!from || !to) {
+                return res.status(400).json({ error: 'Both "from" and "to" query parameters are required' });
+            }
+
+            if (!isVectorSyncInitialized()) {
+                return res.status(503).json({ error: 'Vector search is not initialized' });
+            }
+
+            const fromMatches = callGraph.findNodeByName(from);
+            const toMatches = callGraph.findNodeByName(to);
+
+            if (fromMatches.length === 0) {
+                return res.status(404).json({ error: `Function "${from}" not found in call graph` });
+            }
+            if (toMatches.length === 0) {
+                return res.status(404).json({ error: `Function "${to}" not found in call graph` });
+            }
+
+            const allPaths = [];
+            for (const fromMatch of fromMatches) {
+                for (const toMatch of toMatches) {
+                    const paths = callGraph.getCallPaths(fromMatch.id, toMatch.id, parseInt(maxDepth, 10));
+                    allPaths.push(...paths);
+                }
+            }
+
+            res.json({
+                from,
+                to,
+                pathCount: allPaths.length,
+                paths: allPaths
+            });
+        } catch (err) {
+            debug('Call path search error:', err);
+            res.status(500).json({ error: 'Call path search failed', message: err.message });
+        }
+    });
+
+    app.get('/search/file-functions/:filePath', async (req, res) => {
+        try {
+            const filePath = decodeURIComponent(req.params.filePath);
+
+            if (!isVectorSyncInitialized()) {
+                return res.status(503).json({ error: 'Vector search is not initialized' });
+            }
+
+            const fileId = sha256(filePath);
+            const nodes = await getAstNodesByFile(fileId, 'function');
+
+            const functions = nodes.map(n => ({
+                name: n.node_name,
+                start_line: n.start_line,
+                end_line: n.end_line,
+                signature: n.signature || '',
+                dependencies: n.dependencies ? n.dependencies.split(',').filter(Boolean) : [],
+                id: n.id
+            }));
+
+            res.json({ filePath, functions });
+        } catch (err) {
+            debug('File functions error:', err);
+            res.status(500).json({ error: 'Failed to get file functions', message: err.message });
+        }
+    });
+
+    app.get('/search/callgraph/stats', async (req, res) => {
+        try {
+            const stats = callGraph.getStats();
+            res.json(stats);
+        } catch (err) {
+            debug('Call graph stats error:', err);
+            res.status(500).json({ error: 'Failed to get call graph stats', message: err.message });
         }
     });
 
